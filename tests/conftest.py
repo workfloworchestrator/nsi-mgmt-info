@@ -18,10 +18,10 @@ import logging
 import os
 from pathlib import Path
 
-# Must set DATABASE_URI and create dummy PEM files before any aura module imports
+# Must set DATABASE_URI and create dummy PEM files before any amiss module imports
 # trigger settings/db initialization (Settings validates FilePath at import time)
 os.environ["DATABASE_URI"] = "sqlite://"
-for _pem in ("aura-certificate.pem", "aura-private-key.pem"):
+for _pem in ("amiss-certificate.pem", "amiss-private-key.pem"):
     Path(_pem).touch(exist_ok=True)
 
 from datetime import datetime, timezone
@@ -31,8 +31,8 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 from sqlmodel import Session as SQLModelSession, SQLModel, create_engine
 
-from aura.log import DatabaseLogHandler
-from aura.model import SDP, STP, Reservation
+from amiss.log import DatabaseLogHandler
+from amiss.model import SDP, STP, Reservation, Segment
 
 
 def _disable_database_log_handler():
@@ -74,12 +74,9 @@ def stp_factory():
     def _make_stp(**kwargs):
         defaults = {
             "stpId": "urn:ogf:network:surf.ana.dlp.surfnet.nl:2024:ana-surf:university-1",
-            "inboundPort": None,
-            "outboundPort": None,
-            "inboundAlias": None,
-            "outboundAlias": None,
             "vlanRange": "100-200",
             "description": "Test STP",
+            "isSdpMember": False,
             "active": True,
         }
         defaults.update(kwargs)
@@ -104,6 +101,28 @@ def sdp_factory():
         return SDP(**defaults)
 
     return _make_sdp
+
+
+@pytest.fixture()
+def segment_factory():
+    """Factory for creating Segment instances."""
+
+    def _make_segment(**kwargs):
+        defaults = {
+            "connectionId": "child-seg-0",
+            "reservation_id": 1,
+            "order": 0,
+            "providerNSA": "SupaDuppa",
+            "serviceType": "EVTS.A-GOLE",
+            "capacity": 32768,
+            "sourceStp": "internet2.edu:2025:ana:manlan.ps1",
+            "destStp": "surf.nl:2020:ana:netherlight.ps1",
+            "status": "ACTIVE",
+        }
+        defaults.update(kwargs)
+        return Segment(**defaults)
+
+    return _make_segment
 
 
 @pytest.fixture()

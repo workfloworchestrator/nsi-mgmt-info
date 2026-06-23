@@ -1,0 +1,94 @@
+# Copyright 2024-2025 SURF.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from pydantic import DirectoryPath, FilePath
+from pydantic.networks import HttpUrl
+from pydantic_settings import BaseSettings
+
+#
+# Settings
+#
+
+
+class Settings(BaseSettings):
+    """Amiss application settings."""
+
+    SITE_TITLE: str = "AMISS"
+
+    # host and port to bind to
+    NSI_AMISS_HOST: str = "127.0.0.1"
+    NSI_AMISS_PORT: int = 8000
+
+    # certificate en key to authenticate against NSI control plane
+    NSI_AMISS_CERTIFICATE: FilePath = FilePath("amiss-certificate.pem")
+    NSI_AMISS_PRIVATE_KEY: FilePath = FilePath("amiss-private-key.pem")
+
+    # override use of default CA bundle with certificates from a file or directory
+    CA_CERTIFICATES: FilePath | DirectoryPath | None = None
+
+    # requests certificate verification, only disable while debugging!
+    VERIFY_REQUESTS: bool = True
+
+    # database directory, may be relative or absolute.
+    # The default is a shared in-memory SQLite database (ephemeral, no persistence).
+    # The `uri=true` query is required so SQLite parses `file::memory:` as a URI instead of
+    # creating a file literally named `file::memory:` on disk.
+    DATABASE_URI: str = "sqlite:///file::memory:?cache=shared&uri=true"
+
+    # seed dummy parent Reservations and Segments at startup (dev/demo only)
+    SEED_DUMMY_SEGMENTS_DATA: bool = False
+
+    # directory containing static files, such as images and SOAP templates
+    STATIC_DIRECTORY: DirectoryPath = DirectoryPath("static")
+
+    # nsi-mgmt-info (external) URL (scheme, host, port, prefix)
+    NSA_SCHEME: str = "http"
+    NSA_HOST: str = "localhost"
+    NSA_PORT: str = "8000"
+    NSA_PATH_PREFIX: str = ""
+
+    # NSI provider
+    NSI_PROVIDER_URL: HttpUrl = HttpUrl("http://127.0.0.1:9000/nsi-v2/ConnectionServiceProvider")
+    NSI_PROVIDER_ID: str = "urn:ogf:network:domain.example:2024:nsa"
+    NSI_DDS_PROXY_URL: HttpUrl = HttpUrl("http://dds.domain.example/dds/")
+    NSI_AGG_PROXY_URL:  HttpUrl = HttpUrl("http://aggregator-proxy.domain.example/")
+
+    # upstream WFO (workflow orchestrator) management URL
+    NSI_AMISS_WFO_URL: HttpUrl = HttpUrl("http://orchestrator.domain.example/mgmt")
+
+    # Logging
+    SQL_LOGGING: bool = False
+    LOG_LEVEL: str = "INFO"
+
+    # ASGI root path prefix for reverse proxy with path stripping
+    ROOT_PATH: str = ""
+
+    # NOTE: HttpUrl class will automatically add trailing / when converting to str
+    @property
+    def NSA_BASE_URL(self) -> HttpUrl:
+        """External base URL of this NSA."""
+        return HttpUrl(f"{self.NSA_SCHEME}://{self.NSA_HOST}:{self.NSA_PORT}{self.NSA_PATH_PREFIX}")
+
+    # Verify property for Requests:
+    # False -> no verification
+    # File path -> read CA certificates from file
+    # Directory path -> read CA files from directory with symbolic links to files named by the hash values (c_rehash)
+    # None -> verification with default Requests configured CA bundle
+    @property
+    def verify(self) -> str | bool | None:
+        """Verify option for Requests calls."""
+        return (str(self.CA_CERTIFICATES) if self.CA_CERTIFICATES else None) if self.VERIFY_REQUESTS else False
+
+
+settings = Settings(_env_file="amiss.env")
