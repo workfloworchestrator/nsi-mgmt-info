@@ -1,0 +1,8 @@
+# Python
+__pycache__/
+*.egg-info/
+
+# Test/runtime artifacts (conftest creates dummy PEMs; app writes amiss.log)
+amiss-certificate.pem
+amiss-private-key.pem
+*.log

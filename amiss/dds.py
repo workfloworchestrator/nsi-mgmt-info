@@ -15,6 +15,7 @@
 import structlog
 from pydantic import HttpUrl
 from sqlalchemy import or_, update
+from sqlmodel import col
 
 from amiss.db import Session
 from amiss.model import SDP, STP
@@ -54,7 +55,7 @@ def update_stps(stps: list[STP]) -> None:
             else:
                 log.debug("STP did not change")
     with Session.begin() as session:
-        existing_stp_ids = [row[0] for row in session.query(STP.stpId).filter(STP.active).all()]
+        existing_stp_ids = [row[0] for row in session.query(col(STP.stpId)).filter(col(STP.active)).all()]
         for vanished_stp_id in [stpId for stpId in existing_stp_ids if stpId not in new_stp_ids]:
             logger.info("mark STP as inactive", stpId=vanished_stp_id)
             session.execute(update(STP).where(STP.stpId == vanished_stp_id).values(active=False))
@@ -145,7 +146,9 @@ def dds_proxy_json_to_sdps(sdp_dicts: list) -> list[SDP]:
             if existing_sdp is None:
                 log = logger.bind(stpAId=stpAUrn, stpZId=stpZUrn)
                 log.info("add new SDP")
-                sdp = SDP(stpAId=stpA.id, stpZId=stpZ.id, vlanRange=stpA.vlanRange, description=description, active=True)
+                sdp = SDP(
+                    stpAId=stpA.id, stpZId=stpZ.id, vlanRange=stpA.vlanRange, description=description, active=True
+                )
                 session.add(sdp)
                 sdps.append(sdp)
             else:

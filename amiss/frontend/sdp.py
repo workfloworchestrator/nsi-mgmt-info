@@ -20,6 +20,7 @@ from fastui.components import FireEvent
 from fastui.events import GoToEvent
 from fastui.forms import fastui_form
 from pydantic import BaseModel, Field
+from sqlmodel import col
 
 from amiss.db import Session
 from amiss.frontend.util import app_page, button_row, sdp_table
@@ -38,7 +39,7 @@ async def sdp() -> list[AnyComponent]:
 def sdp_active() -> list[AnyComponent]:
     """Display all active SDP in a table."""
     with Session() as session:
-        sdps = session.query(SDP).filter(SDP.active).order_by(SDP.id).all()
+        sdps = session.query(SDP).filter(col(SDP.active)).order_by(col(SDP.id)).all()
     return app_page(
         *tabs(),
         sdp_table(sdps),
@@ -50,7 +51,7 @@ def sdp_active() -> list[AnyComponent]:
 def sdp_inactive() -> list[AnyComponent]:
     """Display all inactive SDP in a table."""
     with Session() as session:
-        sdps = session.query(SDP).filter(not SDP.active).order_by(SDP.id).all()
+        sdps = session.query(SDP).filter(col(SDP.active).is_(False)).order_by(col(SDP.id)).all()
     return app_page(
         *tabs(),
         sdp_table(sdps),
@@ -62,7 +63,7 @@ def sdp_inactive() -> list[AnyComponent]:
 def sdp_all() -> list[AnyComponent]:
     """Display all SDP in a table."""
     with Session() as session:
-        sdps = session.query(SDP).order_by(SDP.id).all()
+        sdps = session.query(SDP).order_by(col(SDP.id)).all()
     return app_page(
         *tabs(),
         sdp_table(sdps),
@@ -128,7 +129,7 @@ class SdpUpdateForm(BaseModel):
 @router.post("/{id}/update", response_model=FastUI, response_model_exclude_none=True)
 def sdp_update(id: int, form: Annotated[SdpUpdateForm, fastui_form(SdpUpdateForm)]) -> list[FireEvent]:
     with Session.begin() as session:
-        sdp = session.query(SDP).filter(SDP.id == id).one_or_none()
+        sdp = session.query(SDP).filter(col(SDP.id) == id).one_or_none()
         if sdp is not None:
             sdp.description = form.description
     return [c.FireEvent(event=GoToEvent(url=f"/sdp/{id}/"))]

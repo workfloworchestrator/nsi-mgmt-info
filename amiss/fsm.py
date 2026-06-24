@@ -36,7 +36,7 @@ class AmissStateMachine(StateMachine):
             self.log.info(
                 f"State transition to {state.name}",
                 to_state=state.id,
-                connectionId=str(self.model.connectionId),  # type: ignore[union-attr]
+                connectionId=str(self.model.connectionId),
             )
 
 

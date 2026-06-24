@@ -20,6 +20,7 @@ from fastapi import APIRouter
 from fastui import AnyComponent, FastUI
 from fastui import components as c
 from fastui.events import GoToEvent
+from sqlmodel import col
 from starlette.responses import StreamingResponse
 
 from amiss.db import Session
@@ -122,7 +123,7 @@ async def reservation_log(id: int) -> list[AnyComponent]:
 def reservations_all() -> list[AnyComponent]:
     """Display overview of all reservations."""
     with Session() as session:
-        reservations = session.query(Reservation).order_by(Reservation.id).all()
+        reservations = session.query(Reservation).order_by(col(Reservation.id)).all()
     return app_page(
         *reservation_tabs(),
         reservation_table(reservations),
@@ -137,7 +138,7 @@ def reservations_active() -> list[AnyComponent]:
         reservations = (
             session.query(Reservation)
             .filter(Reservation.state == ConnectionStateMachine.ConnectionActive.value)
-            .order_by(Reservation.id)
+            .order_by(col(Reservation.id))
             .all()
         )
     return app_page(
@@ -158,7 +159,7 @@ def reservations_attention() -> list[AnyComponent]:
                 & (Reservation.state != ConnectionStateMachine.ConnectionTerminating.value)
                 & (Reservation.state != ConnectionStateMachine.ConnectionTerminated.value)
             )
-            .order_by(Reservation.id)
+            .order_by(col(Reservation.id))
             .all()
         )
     return app_page(

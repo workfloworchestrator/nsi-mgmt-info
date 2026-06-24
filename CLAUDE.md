@@ -23,8 +23,9 @@ uv run --group dev pytest tests/ -k "test_free_vlan_ranges"
 # Type checking
 uv run --group dev mypy amiss/
 
-# Linting
-uv run --group dev ruff check amiss/
+# Linting and format check (matches CI)
+uv run --group dev ruff check .
+uv run --group dev ruff format --check .
 
 # Build wheel
 uv build --wheel
@@ -70,7 +71,8 @@ The test setup in `conftest.py` has important ordering constraints:
 
 ## Code style
 
-- Line length: 120 (black, isort, ruff all configured consistently)
+- Line length: 120
+- Formatting and linting: `ruff format` + `ruff check` (ruff is the single tool — black/isort/flake8 removed)
 - Python target: 3.13
 - mypy with `pydantic.mypy` plugin, `disallow_untyped_defs = true`
-- ruff rules: ANN, ARG, B, C, D, E, F, I, N, PGH, PTH, Q, RET, RUF, S, T, W
+- ruff rules: ANN, ARG, B, C, D, E, F, I, N, PGH, PTH, Q, RET, RUF, S, T, W; tests exempt from ANN/S101/docstring rules via `per-file-ignores`

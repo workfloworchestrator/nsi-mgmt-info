@@ -37,9 +37,7 @@ def _segment_table_data(components):
 
 
 class TestSpectrumDetail:
-    def test_matches_segments_by_source_stp_stripping_vlan(
-        self, db_session, stp_factory, sdp_factory, segment_factory
-    ):
+    def test_matches_segments_by_source_stp_stripping_vlan(self, db_session, stp_factory, sdp_factory, segment_factory):
         from amiss.frontend.spectrum import spectrum_detail
 
         stp_a = stp_factory(stpId="internet2.edu:2025:ana:manlan.ps1")

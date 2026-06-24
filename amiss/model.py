@@ -41,17 +41,17 @@ class STP(SQLModel, table=True):
 
     @property
     def organisationId(self) -> str:
-        _, _, _, fqdn, date, *opaque_part = self.stpId.split(":")
+        _, _, _, fqdn, date, *_opaque_part = self.stpId.split(":")
         return fqdn + ":" + date
 
     @property
     def networkId(self) -> str:
-        _, _, _, fqdn, date, *opaque_part = self.stpId.split(":")
+        _, _, _, _fqdn, _date, *opaque_part = self.stpId.split(":")
         return opaque_part[0]
 
     @property
     def localId(self) -> str:
-        _, _, _, fqdn, date, *opaque_part = self.stpId.split(":")
+        _, _, _, _fqdn, _date, *opaque_part = self.stpId.split(":")
         return ":".join(opaque_part[1:])
 
     @property
@@ -120,6 +120,7 @@ class Log(SQLModel, table=True):
     timestamp: datetime
     message: str
 
+
 class Segment(SQLModel, table=True):
     """Segment in an NSI P2P circuit (aggregator-proxy API model).
 
@@ -147,4 +148,4 @@ class Segment(SQLModel, table=True):
     capacity: int
     sourceStp: str
     destStp: str
-    status: str | None = None # ARNOTODO
+    status: str | None = None  # ARNOTODO

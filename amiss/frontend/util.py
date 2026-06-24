@@ -148,27 +148,29 @@ def sdp_table(sdps: list[SDP]) -> c.Table:
         class_name="+ small",
     )
 
+
 def spectrum_table(sdps: list[SDP]) -> c.Table:
     return c.Table(
         data_model=SDP,
         data=sdps,
         columns=[
             DisplayLookup(field="id", on_click=GoToEvent(url="/spectrum/{id}/")),
-            #DisplayLookup(field="stpAId"),
-            #DisplayLookup(field="stpZId"),
+            # DisplayLookup(field="stpAId"),
+            # DisplayLookup(field="stpZId"),
             DisplayLookup(field="description"),
             DisplayLookup(field="vlanRange"),
-            #DisplayLookup(field="active"),
+            # DisplayLookup(field="active"),
         ],
         class_name="+ small",
     )
+
 
 def segment_table(segments: list[Segment]) -> c.Table:
     return c.Table(
         data_model=Segment,
         data=segments,
         columns=[
-            DisplayLookup(field="id", on_click=GoToEvent(url="/segment/{id}/")), # ARNOTODO
+            DisplayLookup(field="id", on_click=GoToEvent(url="/segment/{id}/")),  # ARNOTODO
             DisplayLookup(field="reservation_id"),
             DisplayLookup(field="order"),
             DisplayLookup(field="sourceStp"),
@@ -177,7 +179,6 @@ def segment_table(segments: list[Segment]) -> c.Table:
         ],
         class_name="+ small",
     )
-
 
 
 def reservation_tabs() -> list[AnyComponent]:

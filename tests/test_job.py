@@ -16,8 +16,6 @@
 
 from unittest.mock import MagicMock, call, patch
 
-import pytest
-
 
 class TestNsiPollDdsJob:
     @patch("amiss.job.dds_proxy_json_to_sdps")
@@ -118,7 +116,7 @@ class TestNsiPollAggJob:
             b'{"connectionId": "c1", "segments": [{"order": 0}]},'
             b'{"connectionId": "c2"},'  # no segments -> skipped by update_segments
             b'{"segments": [{"order": 0}]}'  # no connectionId -> skipped by update_segments
-            b']}'
+            b"]}"
         )
         nsi_poll_agg_job()
 

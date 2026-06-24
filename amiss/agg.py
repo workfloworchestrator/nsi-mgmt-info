@@ -56,6 +56,7 @@ logger = structlog.get_logger(__name__)
 }
 """
 
+
 def get_aggregator_reservations(proxy_url: HttpUrl) -> bytes | None:
     """Fetch all reservations with full segment detail from the aggregator proxy.
 
@@ -239,4 +240,3 @@ def temp_pull_reservations_from_agg(reservations: list) -> None:
                 )
             )
             log.info("added reservation from aggregator")
-

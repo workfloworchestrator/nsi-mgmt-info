@@ -15,10 +15,8 @@
 from fastapi import APIRouter
 from fastui import AnyComponent, FastUI
 from fastui import components as c
-from fastui.events import GoToEvent
 
 from amiss.frontend.util import app_page
-from amiss.settings import settings
 
 router = APIRouter()
 
@@ -36,6 +34,7 @@ how_to = """
 * [Active Demarcation Points ](/sdp/active).
 * [Active Reservations per link](/spectrum/active).
 """
+
 
 @router.get("/", response_model=FastUI, response_model_exclude_none=True)
 def home() -> list[AnyComponent]:

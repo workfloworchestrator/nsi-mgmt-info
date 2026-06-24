@@ -64,6 +64,7 @@ def nsi_poll_dds_job() -> None:
     if sdps_json is not None:
         dds_proxy_json_to_sdps(json.loads(sdps_json))
 
+
 def nsi_poll_agg_job() -> None:
     """Poll the Aggregator for reservations and persist their Segments to the database."""
     url = settings.NSI_AGG_PROXY_URL
