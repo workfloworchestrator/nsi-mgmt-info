@@ -25,7 +25,7 @@ ANA Engineering and ANA Planning Groups.
 
 ## Prerequisites
 
-- A valid client certificate and private key for mutual TLS authentication with the ANA-NSI components.
+- For mutual-TLS auth to the ANA-NSI proxies (`NSI_PROXY_MTLS_ENABLED=True`): a valid client certificate and private key. Not needed when using header auth (`NSI_PROXY_MTLS_ENABLED=False`).
 - Python 3.13+ (for running from source) or Docker.
 
 ## Configuration
@@ -37,8 +37,11 @@ All settings can be configured via environment variables or an `amiss.env` file 
 | `NSI_DDS_PROXY_URL` | `http://dds.domain.example/dds/` | Base URL of the **nsi-dds-proxy** — source of topology (STPs and SDPs). |
 | `NSI_AGG_PROXY_URL` | `http://aggregator-proxy.domain.example/` | Base URL of the **nsi-aggregator-proxy** — source of reservations and segments. |
 | `NSI_AMISS_WFO_URL` | `http://orchestrator.domain.example/mgmt` | Base URL of the upstream Workflow Orchestrator (WFO) management API. |
-| `NSI_AMISS_CERTIFICATE` | `amiss-certificate.pem` | Path to the PEM-encoded client certificate used for mutual TLS with the ANA-NSI proxies. |
-| `NSI_AMISS_PRIVATE_KEY` | `amiss-private-key.pem` | Path to the PEM-encoded private key corresponding to the client certificate. |
+| `NSI_PROXY_MTLS_ENABLED` | `True` | How AMISS authenticates to the proxies. `True` = mutual TLS with the client cert/key below. `False` = send edge-identity headers (`X-Auth-Method`/`X-Client-DN`) instead — for local dev or in-cluster calls where mTLS is terminated at the ingress. |
+| `NSI_PROXY_AUTH_METHOD` | `x509` | Value sent in the `X-Auth-Method` header when `NSI_PROXY_MTLS_ENABLED=False`. |
+| `NSI_PROXY_CLIENT_DN` | `CN=claude@local.laptop` | Client DN sent in the `X-Client-DN` header when `NSI_PROXY_MTLS_ENABLED=False`. Must be authorized by the proxies. |
+| `NSI_AMISS_CERTIFICATE` | _(unset)_ | Path to the PEM client certificate for mutual TLS. Required only when `NSI_PROXY_MTLS_ENABLED=True`. |
+| `NSI_AMISS_PRIVATE_KEY` | _(unset)_ | Path to the PEM private key for the client certificate. Required only when `NSI_PROXY_MTLS_ENABLED=True`. |
 | `CA_CERTIFICATES` | _(unset)_ | Path to a PEM file or a `c_rehash` directory of CA certificates used to verify the proxies. When unset, the default requests CA bundle is used. |
 | `VERIFY_REQUESTS` | `True` | Verify TLS certificates on outbound requests. Only disable for debugging. |
 | `DATABASE_URI` | `sqlite:///file::memory:?cache=shared&uri=true` | SQLModel database URI. Defaults to ephemeral shared in-memory SQLite; use a file path or PostgreSQL URI to persist. |

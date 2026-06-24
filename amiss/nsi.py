@@ -43,6 +43,8 @@ def _request_auth_kwargs() -> dict[str, Any]:
     instead, matching nsi-orchestrator's ``services/edge_auth.py``.
     """
     if settings.NSI_PROXY_MTLS_ENABLED:
+        if settings.NSI_AMISS_CERTIFICATE is None or settings.NSI_AMISS_PRIVATE_KEY is None:
+            raise RuntimeError("NSI_PROXY_MTLS_ENABLED is true but NSI_AMISS_CERTIFICATE/PRIVATE_KEY are unset")
         return {
             "verify": settings.verify,
             "cert": (str(settings.NSI_AMISS_CERTIFICATE), str(settings.NSI_AMISS_PRIVATE_KEY)),

@@ -30,9 +30,10 @@ class Settings(BaseSettings):
     NSI_AMISS_HOST: str = "127.0.0.1"
     NSI_AMISS_PORT: int = 8000
 
-    # certificate en key to authenticate against NSI control plane
-    NSI_AMISS_CERTIFICATE: FilePath = FilePath("amiss-certificate.pem")
-    NSI_AMISS_PRIVATE_KEY: FilePath = FilePath("amiss-private-key.pem")
+    # certificate and key for mutual TLS to the NSI proxies. Only required when
+    # NSI_PROXY_MTLS_ENABLED is true; left unset for local dev / header auth.
+    NSI_AMISS_CERTIFICATE: FilePath | None = None
+    NSI_AMISS_PRIVATE_KEY: FilePath | None = None
 
     # override use of default CA bundle with certificates from a file or directory
     CA_CERTIFICATES: FilePath | DirectoryPath | None = None
