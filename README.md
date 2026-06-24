@@ -30,26 +30,33 @@ ANA Engineering and ANA Planning Groups.
 
 ## Configuration
 
-All settings can be configured via environment variables or a `mgmtinfo_proxy.env` file placed in the working directory. Environment variables take precedence over the env file.
+All settings can be configured via environment variables or an `amiss.env` file placed in the working directory. Environment variables take precedence over the env file.
 
 | Variable | Default | Description |
 |---|---|---|
-| `NSI_AMISS_WFO_URL` | `https://your-orchestrator-server/mgmt` | Base URL of the upstream WFO server. |
-| `NSI_AMISS_CERTIFICATE` | _(unset)_ | Path to the PEM-encoded client certificate used for mutual TLS with the MGMTINFO server. |
-| `NSI_AMISS_PRIVATE_KEY` | _(unset)_ | Path to the PEM-encoded private key corresponding to the client certificate. |
-| `CA_CERTIFICATES` | _(unset)_ | Path to a PEM file containing the CA certificates used to verify the MGMTINFO server. When set, replaces the system CA store entirely. |
-| `CACHE_TTL_SECONDS` | `60` | How long (in seconds) the MGMTINFO response is cached before the next upstream fetch. |
-| `HTTP_TIMEOUT_SECONDS` | `30.0` | Timeout (in seconds) for HTTP requests to the MGMTINFO server. |
+| `NSI_DDS_PROXY_URL` | `http://dds.domain.example/dds/` | Base URL of the **nsi-dds-proxy** — source of topology (STPs and SDPs). |
+| `NSI_AGG_PROXY_URL` | `http://aggregator-proxy.domain.example/` | Base URL of the **nsi-aggregator-proxy** — source of reservations and segments. |
+| `NSI_AMISS_WFO_URL` | `http://orchestrator.domain.example/mgmt` | Base URL of the upstream Workflow Orchestrator (WFO) management API. |
+| `NSI_AMISS_CERTIFICATE` | `amiss-certificate.pem` | Path to the PEM-encoded client certificate used for mutual TLS with the ANA-NSI proxies. |
+| `NSI_AMISS_PRIVATE_KEY` | `amiss-private-key.pem` | Path to the PEM-encoded private key corresponding to the client certificate. |
+| `CA_CERTIFICATES` | _(unset)_ | Path to a PEM file or a `c_rehash` directory of CA certificates used to verify the proxies. When unset, the default requests CA bundle is used. |
+| `VERIFY_REQUESTS` | `True` | Verify TLS certificates on outbound requests. Only disable for debugging. |
+| `DATABASE_URI` | `sqlite:///file::memory:?cache=shared&uri=true` | SQLModel database URI. Defaults to ephemeral shared in-memory SQLite; use a file path or PostgreSQL URI to persist. |
+| `SEED_DUMMY_SEGMENTS_DATA` | `False` | Seed dummy reservations/segments at startup (dev/demo only). |
+| `NSI_AMISS_HOST` | `127.0.0.1` | Interface the server binds to. The container image sets this to `0.0.0.0`. |
+| `NSI_AMISS_PORT` | `8000` | TCP port the server listens on. The container image sets this to `8080`. |
+| `STATIC_DIRECTORY` | `static` | Directory containing static assets (images, templates). |
+| `SITE_TITLE` | `AMISS` | Title shown in the web UI. |
+| `ROOT_PATH` | _(empty)_ | ASGI root-path prefix when deployed behind a reverse proxy that strips a path prefix. |
+| `SQL_LOGGING` | `False` | Log SQLAlchemy statements. |
 | `LOG_LEVEL` | `INFO` | Logging verbosity. Accepted values: `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
-| `NSI_AMISS_HOST` | `localhost` | Interface the server binds to. Set to `0.0.0.0` to accept connections on all interfaces. |
-| `NSI_AMISS_PORT` | `8000` | TCP port the server listens on. |
 
-A ready-to-use template is provided in `mgmtinfo_proxy.env`. The application automatically reads this file from the working directory when it starts, so in most cases you only need to edit it in place.
+A ready-to-use template is provided in `amiss.env`. The application automatically reads this file from the working directory when it starts, so in most cases you only need to edit it in place.
 
 If you want to maintain multiple configurations (e.g. for different environments), copy it and pass the copy explicitly via `docker run --env-file` or by exporting the variables in your shell:
 
 ```bash
-cp mgmtinfo_proxy.env production.env
+cp amiss.env production.env
 # edit production.env
 
 # Use with Docker:
@@ -57,10 +64,10 @@ docker run --env-file production.env ...
 
 # Use in your shell (exports all non-comment lines as environment variables):
 export $(grep -v '^#' production.env | xargs)
-mgmt-info
+nsi-mgmt-info
 ```
 
-Note that `docker run --env-file` expects plain `KEY=VALUE` lines — no `export` keyword, no quotes around values. The provided `mgmtinfo_proxy.env` is already in this format.
+Note that `docker run --env-file` expects plain `KEY=VALUE` lines — no `export` keyword, no quotes around values. The provided `amiss.env` is already in this format.
 
 ## Running the Application
 
@@ -70,10 +77,10 @@ Install dependencies and start the server:
 
 ```bash
 uv sync
-mgmt-info
+nsi-mgmt-info
 ```
 
-The `mgmt-info` entry point starts a Uvicorn server using the host and port from your configuration. Make sure `mgmtinfo_proxy.env` is present in the directory you run the command from, or export the required environment variables beforehand.
+The `nsi-mgmt-info` entry point starts a Uvicorn server using the host and port from your configuration. Make sure `amiss.env` is present in the directory you run the command from, or export the required environment variables beforehand.
 
 ### With Python directly
 
@@ -81,13 +88,13 @@ If you have the package installed in your Python environment:
 
 ```bash
 pip install .
-mgmt-info
+nsi-mgmt-info
 ```
 
 Or invoke Uvicorn manually, which lets you override host, port, and the number of workers:
 
 ```bash
-uvicorn mgmtinfo_proxy.main:app --host 0.0.0.0 --port 8000 --workers 4
+uvicorn amiss:app --host 0.0.0.0 --port 8000 --workers 4
 ```
 
 Note that when using `uvicorn` directly, `NSI_AMISS_HOST` and `NSI_AMISS_PORT` are ignored — pass them as CLI arguments instead.
@@ -97,30 +104,32 @@ Note that when using `uvicorn` directly, `NSI_AMISS_HOST` and `NSI_AMISS_PORT` a
 A pre-built image is available on the GitHub Container Registry:
 
 ```
-ghcr.io/workfloworchestrator/nsi-mgmt-info:0.1.0
+ghcr.io/workfloworchestrator/nsi-mgmt-info:latest
 ```
 
 Run it directly, mounting your certificate files and passing configuration via environment variables:
 
 ```bash
 docker run --rm \
-  -p 8000:8000 \
+  -p 8080:8080 \
   -v /path/to/your/certs:/certs:ro \
   -e NSI_AMISS_CERTIFICATE=/certs/client-certificate.pem \
   -e NSI_AMISS_PRIVATE_KEY=/certs/client-private-key.pem \
   -e CA_CERTIFICATES=/certs/ca-bundle.pem \
-  -e NSI_AMISS_WFO_URL=https://your-dds-server/dds \
-  ghcr.io/workfloworchestrator/nsi-mgmt-info:0.1.0
+  -e NSI_DDS_PROXY_URL=https://your-dds-proxy/dds/ \
+  -e NSI_AGG_PROXY_URL=https://your-aggregator-proxy/ \
+  -e NSI_AMISS_WFO_URL=https://your-orchestrator-server/mgmt \
+  ghcr.io/workfloworchestrator/nsi-mgmt-info:latest
 ```
 
 Or pass all settings via an env file:
 
 ```bash
 docker run --rm \
-  -p 8000:8000 \
+  -p 8080:8080 \
   -v /path/to/your/certs:/certs:ro \
   --env-file production.env \
-  ghcr.io/workfloworchestrator/nsi-mgmt-info:0.1.0
+  ghcr.io/workfloworchestrator/nsi-mgmt-info:latest
 ```
 
 If you prefer to build the image yourself:
@@ -157,14 +166,16 @@ spec:
     spec:
       containers:
         - name: nsi-mgmt-info
-          image: ghcr.io/workfloworchestrator/nsi-mgmt-info:0.1.0
+          image: ghcr.io/workfloworchestrator/nsi-mgmt-info:latest
           ports:
-            - containerPort: 8000
+            - containerPort: 8080
           env:
+            - name: NSI_DDS_PROXY_URL
+              value: "https://your-dds-proxy/dds/"
+            - name: NSI_AGG_PROXY_URL
+              value: "https://your-aggregator-proxy/"
             - name: NSI_AMISS_WFO_URL
               value: "https://your-wfo-server/mgmt"
-            - name: NSI_AMISS_HOST
-              value: "0.0.0.0"
             - name: NSI_AMISS_CERTIFICATE
               value: "/certs/client-certificate.pem"
             - name: NSI_AMISS_PRIVATE_KEY
@@ -189,7 +200,7 @@ spec:
     app: nsi-mgmt-info
   ports:
     - port: 80
-      targetPort: 8000
+      targetPort: 8080
 ```
 
 ### With Helm chart
@@ -207,23 +218,21 @@ image:
   repository: ghcr.io/workfloworchestrator/nsi-mgmt-info
   tag: latest
 env:
-  CACHE_TTL_SECONDS: '60'
+  NSI_DDS_PROXY_URL: https://nsi-dds-proxy.your.domain/dds/
+  NSI_AGG_PROXY_URL: https://nsi-aggregator-proxy.your.domain/
   NSI_AMISS_WFO_URL: https://nsi-orchestrator.your.domain/mgmt
   CA_CERTIFICATES: /certs/ca-bundle.pem
   NSI_AMISS_CERTIFICATE: /certs/client-certificate.pem
   NSI_AMISS_PRIVATE_KEY: /certs/client-private-key.pem
-  NSI_AMISS_HOST: 0.0.0.0
-  NSI_AMISS_PORT: '8000'
-  HTTP_TIMEOUT_SECONDS: '30.0'
   LOG_LEVEL: INFO
 livenessProbe:
   httpGet:
-    path: /health
-    port: 8000
+    path: /healthcheck
+    port: 8080
 readinessProbe:
   httpGet:
-    path: /health
-    port: 8000
+    path: /healthcheck
+    port: 8080
 resources:
   limits:
     cpu: 1000m

@@ -6,3 +6,6 @@ __pycache__/
 amiss-certificate.pem
 amiss-private-key.pem
 *.log
+
+# IDE
+.idea/

@@ -64,6 +64,15 @@ class Settings(BaseSettings):
     NSI_DDS_PROXY_URL: HttpUrl = HttpUrl("http://dds.domain.example/dds/")
     NSI_AGG_PROXY_URL: HttpUrl = HttpUrl("http://aggregator-proxy.domain.example/")
 
+    # Proxy authentication. Production uses mutual TLS (NSI_AMISS_CERTIFICATE/PRIVATE_KEY above).
+    # For local development against port-forwarded proxies (mTLS terminated at the ingress), set
+    # NSI_PROXY_MTLS_ENABLED=false to instead send the edge-identity headers the proxies would
+    # otherwise receive from the ingress (X-Auth-Method / X-Client-DN). Both proxies trust the
+    # same edge identity. Mirrors nsi-orchestrator's services/edge_auth.py.
+    NSI_PROXY_MTLS_ENABLED: bool = True
+    NSI_PROXY_AUTH_METHOD: str = "x509"
+    NSI_PROXY_CLIENT_DN: str = "CN=claude@local.laptop"
+
     # upstream WFO (workflow orchestrator) management URL
     NSI_AMISS_WFO_URL: HttpUrl = HttpUrl("http://orchestrator.domain.example/mgmt")
 

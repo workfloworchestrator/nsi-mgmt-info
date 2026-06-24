@@ -17,4 +17,6 @@ USER amiss
 WORKDIR /home/amiss
 EXPOSE 8080/tcp
 ENV STATIC_DIRECTORY=/usr/local/share/amiss/static
+# Serve on all interfaces and the exposed port (app defaults are 127.0.0.1:8000)
+ENV NSI_AMISS_HOST=0.0.0.0 NSI_AMISS_PORT=8080
 CMD ["nsi-mgmt-info"]
