@@ -97,10 +97,10 @@ def spectrum_detail(id: int) -> list[AnyComponent]:
     spectrum_segments = []
     for segment in segments:
         for direction_stp in [segment.sourceStp, segment.destStp]:
-            segment_stp = direction_stp.split("?")[0] if "?" in direction_stp else direction_stp
-            segment_stp_id = segment_stp[len("urn:ogf:network:") :]
+            segment_stp_id = direction_stp.split("?")[0] if "?" in direction_stp else direction_stp
             if segment_stp_id in want_sdp_ids:
-                spectrum_segments.append(segment)
+                if segment_stp_id not in spectrum_segments:
+                    spectrum_segments.append(segment)
 
     # Convert to HTML elements
     segtable = segment_table(spectrum_segments)
