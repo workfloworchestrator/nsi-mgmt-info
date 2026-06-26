@@ -93,13 +93,16 @@ def spectrum_detail(id: int) -> list[AnyComponent]:
         want_sdp_ids = [sdp.stpA.stpId, sdp.stpZ.stpId]
         segments = session.query(Segment).all()
 
-    # Keep the segments whose source STP (minus any ?vlan=... suffix) is one of this SDP's STPs.
-    spectrum_segments = [
-        segment
-        for segment in segments
-        if (segment.sourceStp.split("?")[0] if "?" in segment.sourceStp else segment.sourceStp) in want_sdp_ids
-    ]
+    # Keep the segments whose STP (source or dest) (minus any ?vlan=... suffix) is one of this SDP's STPs.
+    spectrum_segments = []
+    for segment in segments:
+        for direction_stp in [segment.sourceStp, segment.destStp]:
+            segment_stp = direction_stp.split("?")[0] if "?" in direction_stp else direction_stp
+            segment_stp_id = segment_stp[len("urn:ogf:network:") :]
+            if segment_stp_id in want_sdp_ids:
+                spectrum_segments.append(segment)
 
+    # Convert to HTML elements
     segtable = segment_table(spectrum_segments)
 
     return app_page(

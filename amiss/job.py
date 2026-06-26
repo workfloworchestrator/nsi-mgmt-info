@@ -12,6 +12,7 @@
 #  limitations under the License.
 
 import json
+import threading
 
 import structlog
 from apscheduler.executors.pool import ThreadPoolExecutor
@@ -43,6 +44,9 @@ scheduler = BackgroundScheduler(
 
 logger = structlog.get_logger(__name__)
 
+logger.warning("ARNO AMISS JOB, CREATE LOCK. WARNING: fastapi dev X does init twice, and hence creates 2 locks. FIXME")
+_sources_lock = threading.Lock()
+
 
 def nsi_poll_dds_job() -> None:
     """Poll the DDS proxy for STPs and SDPs and refresh the database.
@@ -51,7 +55,7 @@ def nsi_poll_dds_job() -> None:
     """
     url = settings.NSI_DDS_PROXY_URL
     log = logger.bind(url=str(url))
-    log.warning("polling dds proxy")
+    log.info("polling dds proxy")
 
     with Session.begin() as session:
         session.query(SDP).delete()
@@ -69,7 +73,7 @@ def nsi_poll_agg_job() -> None:
     """Poll the Aggregator for reservations and persist their Segments to the database."""
     url = settings.NSI_AGG_PROXY_URL
     log = logger.bind(url=str(url))
-    log.warning("polling agg proxy")
+    log.info("polling agg proxy")
 
     jsondata = get_aggregator_reservations(url)
     if jsondata is None:
@@ -87,7 +91,7 @@ def nsi_poll_agg_job() -> None:
     temp_pull_reservations_from_agg(jsondict["reservations"])
 
     for resdict in jsondict["reservations"]:
-        if "connectionId" in resdict and "segments" in resdict:
+        if "connectionId" in resdict and "segments" in resdict and resdict["segments"] is not None:
             update_segments(resdict["connectionId"], resdict["segments"])
 
 
@@ -98,8 +102,21 @@ def nsi_poll_sources() -> None:
     against the STP rows the DDS poll just refreshed.
     """
     log = logger.bind(url="about:sources")
-    if settings.SEED_DUMMY_SEGMENTS_DATA:
-        log.warning("operating on dummy data, not polling sources")
-    else:
-        nsi_poll_dds_job()
-        nsi_poll_agg_job()
+    global _sources_lock
+    _sources_lock.acquire()
+    try:
+        log.info(
+            "polling sources with lock tid %d %s", threading.current_thread().ident, threading.current_thread().name
+        )
+        if settings.SEED_DUMMY_SEGMENTS_DATA:
+            log.info("operating on dummy data, not polling sources")
+        else:
+            nsi_poll_dds_job()
+            nsi_poll_agg_job()
+    except KeyError as e:
+        log.exception("polling sources", error=str(e))
+    finally:
+        log.info(
+            "polling sources released lock tid %d %s", threading.current_thread().ident, threading.current_thread().name
+        )
+        _sources_lock.release()
