@@ -44,7 +44,7 @@ scheduler = BackgroundScheduler(
 
 logger = structlog.get_logger(__name__)
 
-print("ARNO AMISS JOB, CREATE LOCK. WARNING: fastapi dev X does init twice, and hence creates 2 locks. FIXME")
+logger.warning("ARNO AMISS JOB, CREATE LOCK. WARNING: fastapi dev X does init twice, and hence creates 2 locks. FIXME")
 _sources_lock = threading.Lock()
 
 def nsi_poll_dds_job() -> None:
@@ -110,7 +110,7 @@ def nsi_poll_sources() -> None:
         else:
             nsi_poll_dds_job()
             nsi_poll_agg_job()
-    except:
+    except KeyError as e:
         log.exception("polling sources")
     finally:
         log.info("polling sources released lock tid %d %s", threading.current_thread().ident, threading.current_thread().name)
