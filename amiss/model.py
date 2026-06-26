@@ -134,8 +134,8 @@ class Segment(SQLModel, table=True):
         providerNSA: "urn:ogf:network:west.example.net:2025:nsa:supa",
         serviceType: "http://services.ogf.org/nsi/2013/12/descriptions/EVTS.A-GOLE",
         capacity: 1000,
-        sourceSTP: urn:ogf:network:west.example.net:2025:port-a?vlan=100,
-        destSTP: urn:ogf:network:west.example.net:2025:port-b?vlan=200,
+        sourceSTP: west.example.net:2025:port-a?vlan=100,   # Note: no prefix
+        destSTP:   west.example.net:2025:port-b?vlan=200,   # Note: no prefix
         status: "ACTIVATED"
     """
 
@@ -146,6 +146,6 @@ class Segment(SQLModel, table=True):
     providerNSA: str
     serviceType: str
     capacity: int
-    sourceStp: str
-    destStp: str
+    sourceStp: str  # without "urn:ogf:network:" prefix, for clear and easy fastUI display
+    destStp: str  # without "urn:ogf:network:" prefix, for clear and easy fastUI display
     status: str | None = None  # ARNOTODO
