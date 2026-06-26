@@ -47,6 +47,7 @@ logger = structlog.get_logger(__name__)
 logger.warning("ARNO AMISS JOB, CREATE LOCK. WARNING: fastapi dev X does init twice, and hence creates 2 locks. FIXME")
 _sources_lock = threading.Lock()
 
+
 def nsi_poll_dds_job() -> None:
     """Poll the DDS proxy for STPs and SDPs and refresh the database.
 
@@ -104,7 +105,9 @@ def nsi_poll_sources() -> None:
     global _sources_lock
     _sources_lock.acquire()
     try:
-        log.info("polling sources with lock tid %d %s", threading.current_thread().ident, threading.current_thread().name)
+        log.info(
+            "polling sources with lock tid %d %s", threading.current_thread().ident, threading.current_thread().name
+        )
         if settings.SEED_DUMMY_SEGMENTS_DATA:
             log.info("operating on dummy data, not polling sources")
         else:
@@ -113,6 +116,7 @@ def nsi_poll_sources() -> None:
     except KeyError as e:
         log.exception("polling sources", error=str(e))
     finally:
-        log.info("polling sources released lock tid %d %s", threading.current_thread().ident, threading.current_thread().name)
+        log.info(
+            "polling sources released lock tid %d %s", threading.current_thread().ident, threading.current_thread().name
+        )
         _sources_lock.release()
-

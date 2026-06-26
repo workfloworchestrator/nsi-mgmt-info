@@ -25,9 +25,7 @@ def test_header_auth_when_mtls_disabled(monkeypatch):
     monkeypatch.setattr(settings, "NSI_PROXY_MTLS_ENABLED", False)
     monkeypatch.setattr(settings, "NSI_PROXY_AUTH_METHOD", "x509")
     monkeypatch.setattr(settings, "NSI_PROXY_CLIENT_DN", "CN=nsi-mgmt-info")
-    assert nsi._request_auth_kwargs() == {
-        "headers": {"X-Auth-Method": "x509", "X-Client-DN": "CN=nsi-mgmt-info"}
-    }
+    assert nsi._request_auth_kwargs() == {"headers": {"X-Auth-Method": "x509", "X-Client-DN": "CN=nsi-mgmt-info"}}
 
 
 def test_mtls_disabled_needs_no_cert_files(monkeypatch):

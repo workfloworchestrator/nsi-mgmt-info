@@ -51,8 +51,14 @@ class TestSpectrumDetail:
         db_session.flush()
 
         # TODO: determine how to store Segment STP's: with URN or without (Arno says with, 1 form)
-        db_session.add(segment_factory(connectionId="match-a", sourceStp="urn:ogf:network:internet2.edu:2025:ana:manlan.ps1"))
-        db_session.add(segment_factory(connectionId="match-z", sourceStp="urn:ogf:network:surf.nl:2020:ana:netherlight.ps1?vlan=481"))
+        db_session.add(
+            segment_factory(connectionId="match-a", sourceStp="urn:ogf:network:internet2.edu:2025:ana:manlan.ps1")
+        )
+        db_session.add(
+            segment_factory(
+                connectionId="match-z", sourceStp="urn:ogf:network:surf.nl:2020:ana:netherlight.ps1?vlan=481"
+            )
+        )
         db_session.add(segment_factory(connectionId="no-match", sourceStp="urn:ogf:network:some.other:2025:stp"))
         db_session.flush()
 
