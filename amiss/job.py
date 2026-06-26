@@ -12,9 +12,9 @@
 #  limitations under the License.
 
 import json
+import threading
 
 import structlog
-import threading
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
