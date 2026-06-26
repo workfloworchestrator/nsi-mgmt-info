@@ -111,7 +111,7 @@ def nsi_poll_sources() -> None:
             nsi_poll_dds_job()
             nsi_poll_agg_job()
     except KeyError as e:
-        log.exception("polling sources")
+        log.exception("polling sources", error=str(e))
     finally:
         log.info("polling sources released lock tid %d %s", threading.current_thread().ident, threading.current_thread().name)
         _sources_lock.release()
