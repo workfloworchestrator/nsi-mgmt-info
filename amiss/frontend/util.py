@@ -86,10 +86,10 @@ def amiss_logo() -> AnyComponent:
         components=[
             c.Image(
                 # src='https://avatars.githubusercontent.com/u/110818415',
-                src=f"{settings.ROOT_PATH}/static/ANA-logo-scaled-ab2.png",
+                src=f"{settings.ROOT_PATH}/static/ANA-logo-scaled-ab3.png",
                 alt="ANA footer Logo",
-                width=400,
-                height=232,
+                width=800,
+                height=58,
                 loading="lazy",
                 referrer_policy="no-referrer",
             )
