@@ -104,8 +104,8 @@ def segdicts_to_segments(reservation_id: int, segdicts: list) -> list[Segment]:
                 providerNSA=providerNSA,
                 serviceType=serviceType,
                 capacity=capacity,
-                sourceStp=sourceStpUrn,
-                destStp=destStpUrn,
+                sourceStp=sourceStpUrn[len("urn:ogf:network:") :],
+                destStp=destStpUrn[len("urn:ogf:network:") :],
                 status=status,
             )
         )
