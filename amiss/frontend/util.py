@@ -86,10 +86,10 @@ def amiss_logo() -> AnyComponent:
         components=[
             c.Image(
                 # src='https://avatars.githubusercontent.com/u/110818415',
-                src=f"{settings.ROOT_PATH}/static/ANA-logo-scaled-ab3.png",
+                src=f"{settings.ROOT_PATH}/static/ANA-logo-scaled-ab2.png",
                 alt="ANA footer Logo",
-                width=800,
-                height=58,
+                width=400,
+                height=232,
                 loading="lazy",
                 referrer_policy="no-referrer",
             )
@@ -148,29 +148,27 @@ def sdp_table(sdps: list[SDP]) -> c.Table:
         class_name="+ small",
     )
 
-
 def spectrum_table(sdps: list[SDP]) -> c.Table:
     return c.Table(
         data_model=SDP,
         data=sdps,
         columns=[
             DisplayLookup(field="id", on_click=GoToEvent(url="/spectrum/{id}/")),
-            # DisplayLookup(field="stpAId"),
-            # DisplayLookup(field="stpZId"),
+            #DisplayLookup(field="stpAId"),
+            #DisplayLookup(field="stpZId"),
             DisplayLookup(field="description"),
             DisplayLookup(field="vlanRange"),
-            # DisplayLookup(field="active"),
+            #DisplayLookup(field="active"),
         ],
         class_name="+ small",
     )
-
 
 def segment_table(segments: list[Segment]) -> c.Table:
     return c.Table(
         data_model=Segment,
         data=segments,
         columns=[
-            DisplayLookup(field="id", on_click=GoToEvent(url="/segment/{id}/")),  # ARNOTODO
+            DisplayLookup(field="id", on_click=GoToEvent(url="/segment/{id}/")), # ARNOTODO
             DisplayLookup(field="reservation_id"),
             DisplayLookup(field="order"),
             DisplayLookup(field="sourceStp"),
@@ -179,6 +177,7 @@ def segment_table(segments: list[Segment]) -> c.Table:
         ],
         class_name="+ small",
     )
+
 
 
 def reservation_tabs() -> list[AnyComponent]:

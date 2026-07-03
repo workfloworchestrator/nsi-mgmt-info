@@ -78,16 +78,8 @@ class TestSeed:
             mock.stop()
 
         segments = db_session.query(Segment).all()
-        moxy_sdp = (
-            db_session.query(SDP)
-            .filter(SDP.stpAId == _stp_id(db_session, "internet2.edu:2025:ana:manlan.moxy-1"))
-            .one()
-        )
-        nea3r_sdp = (
-            db_session.query(SDP)
-            .filter(SDP.stpAId == _stp_id(db_session, "internet2.edu:2025:ana:manlan.netherlight-1"))
-            .one()
-        )
+        moxy_sdp = db_session.query(SDP).filter(SDP.stpAId == _stp_id(db_session, "internet2.edu:2025:ana:manlan.moxy-1")).one()
+        nea3r_sdp = db_session.query(SDP).filter(SDP.stpAId == _stp_id(db_session, "internet2.edu:2025:ana:manlan.netherlight-1")).one()
 
         # The MOXY link carries both MOXY reservations (4 segments: vlan 481 + vlan 139, both directions).
         assert len(_segments_on_sdp(moxy_sdp, segments)) == 4

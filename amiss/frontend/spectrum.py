@@ -32,10 +32,9 @@ from fastui.components import FireEvent
 from fastui.events import GoToEvent
 from fastui.forms import fastui_form
 from pydantic import BaseModel, Field
-from sqlmodel import col
 
 from amiss.db import Session
-from amiss.frontend.util import app_page, button_row, segment_table, spectrum_table
+from amiss.frontend.util import app_page, button_row, spectrum_table, segment_table
 from amiss.model import SDP, Segment
 
 router = APIRouter()
@@ -51,7 +50,7 @@ async def spectrum() -> list[AnyComponent]:
 def spectrum_active() -> list[AnyComponent]:
     """Display all active SDP in a table."""
     with Session() as session:
-        sdps = session.query(SDP).filter(col(SDP.active)).order_by(col(SDP.id)).all()
+        sdps = session.query(SDP).filter(SDP.active).order_by(SDP.id).all()
     return app_page(
         *tabs(),
         spectrum_table(sdps),
@@ -63,7 +62,7 @@ def spectrum_active() -> list[AnyComponent]:
 def spectrum_inactive() -> list[AnyComponent]:
     """Display all inactive SDP in a table."""
     with Session() as session:
-        sdps = session.query(SDP).filter(col(SDP.active).is_(False)).order_by(col(SDP.id)).all()
+        sdps = session.query(SDP).filter(not SDP.active).order_by(SDP.id).all()
     return app_page(
         *tabs(),
         spectrum_table(sdps),
@@ -75,7 +74,7 @@ def spectrum_inactive() -> list[AnyComponent]:
 def spectrum_all() -> list[AnyComponent]:
     """Display all SDP in a table."""
     with Session() as session:
-        sdps = session.query(SDP).order_by(col(SDP.id)).all()
+        sdps = session.query(SDP).order_by(SDP.id).all()
     return app_page(
         *tabs(),
         spectrum_table(sdps),
@@ -93,16 +92,13 @@ def spectrum_detail(id: int) -> list[AnyComponent]:
         want_sdp_ids = [sdp.stpA.stpId, sdp.stpZ.stpId]
         segments = session.query(Segment).all()
 
-    # Keep the segments whose STP (source or dest) (minus any ?vlan=... suffix) is one of this SDP's STPs.
-    spectrum_segments = []
-    for segment in segments:
-        for direction_stp in [segment.sourceStp, segment.destStp]:
-            segment_stp_id = direction_stp.split("?")[0] if "?" in direction_stp else direction_stp
-            if segment_stp_id in want_sdp_ids:
-                if segment_stp_id not in spectrum_segments:
-                    spectrum_segments.append(segment)
+    # Keep the segments whose source STP (minus any ?vlan=... suffix) is one of this SDP's STPs.
+    spectrum_segments = [
+        segment
+        for segment in segments
+        if (segment.sourceStp.split("?")[0] if "?" in segment.sourceStp else segment.sourceStp) in want_sdp_ids
+    ]
 
-    # Convert to HTML elements
     segtable = segment_table(spectrum_segments)
 
     return app_page(
@@ -130,7 +126,7 @@ class SpectrumUpdateForm(BaseModel):
 @router.post("/{id}/update", response_model=FastUI, response_model_exclude_none=True)
 def spectrum_update(id: int, form: Annotated[SpectrumUpdateForm, fastui_form(SpectrumUpdateForm)]) -> list[FireEvent]:
     with Session.begin() as session:
-        sdp = session.query(SDP).filter(col(SDP.id) == id).one_or_none()
+        sdp = session.query(SDP).filter(SDP.id == id).one_or_none()
         if sdp is not None:
             sdp.description = form.description
     return [c.FireEvent(event=GoToEvent(url=f"/spectrum/{id}/"))]

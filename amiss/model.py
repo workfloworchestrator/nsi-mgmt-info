@@ -41,17 +41,17 @@ class STP(SQLModel, table=True):
 
     @property
     def organisationId(self) -> str:
-        _, _, _, fqdn, date, *_opaque_part = self.stpId.split(":")
+        _, _, _, fqdn, date, *opaque_part = self.stpId.split(":")
         return fqdn + ":" + date
 
     @property
     def networkId(self) -> str:
-        _, _, _, _fqdn, _date, *opaque_part = self.stpId.split(":")
+        _, _, _, fqdn, date, *opaque_part = self.stpId.split(":")
         return opaque_part[0]
 
     @property
     def localId(self) -> str:
-        _, _, _, _fqdn, _date, *opaque_part = self.stpId.split(":")
+        _, _, _, fqdn, date, *opaque_part = self.stpId.split(":")
         return ":".join(opaque_part[1:])
 
     @property
@@ -120,7 +120,6 @@ class Log(SQLModel, table=True):
     timestamp: datetime
     message: str
 
-
 class Segment(SQLModel, table=True):
     """Segment in an NSI P2P circuit (aggregator-proxy API model).
 
@@ -134,8 +133,8 @@ class Segment(SQLModel, table=True):
         providerNSA: "urn:ogf:network:west.example.net:2025:nsa:supa",
         serviceType: "http://services.ogf.org/nsi/2013/12/descriptions/EVTS.A-GOLE",
         capacity: 1000,
-        sourceSTP: west.example.net:2025:port-a?vlan=100,   # Note: no prefix
-        destSTP:   west.example.net:2025:port-b?vlan=200,   # Note: no prefix
+        sourceSTP: urn:ogf:network:west.example.net:2025:port-a?vlan=100,
+        destSTP: urn:ogf:network:west.example.net:2025:port-b?vlan=200,
         status: "ACTIVATED"
     """
 
@@ -146,6 +145,6 @@ class Segment(SQLModel, table=True):
     providerNSA: str
     serviceType: str
     capacity: int
-    sourceStp: str  # without "urn:ogf:network:" prefix, for clear and easy fastUI display
-    destStp: str  # without "urn:ogf:network:" prefix, for clear and easy fastUI display
-    status: str | None = None  # ARNOTODO
+    sourceStp: str
+    destStp: str
+    status: str

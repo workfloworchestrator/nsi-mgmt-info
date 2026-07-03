@@ -23,21 +23,22 @@ fullnameOverride: ""
 env:
   # Path prefix the app is served at behind the reverse-proxy portal (see ROOT_PATH design)
   ROOT_PATH: "/amiss"
-  # Data sources — override per environment:
-#  NSI_DDS_PROXY_URL: "http://dds.domain.example/dds/"
-#  NSI_AGG_PROXY_URL: "http://aggregator-proxy.domain.example/"
-#  NSI_AMISS_WFO_URL: "http://orchestrator.domain.example/mgmt"
-  # The container image already binds 0.0.0.0:8080; only override if you change service.targetPort.
+#  SITE_TITLE: "AMISS - Demo"
 #  NSI_AMISS_HOST: "0.0.0.0"
 #  NSI_AMISS_PORT: "8080"
-#  SITE_TITLE: "AMISS - Demo"
 #  NSI_AMISS_CERTIFICATE: "amiss-certificate.pem"
 #  NSI_AMISS_PRIVATE_KEY: "amiss-private-key.pem"
-#  CA_CERTIFICATES:
+#  CERTIFICATES_DIRECTORY: 
 #  VERIFY_REQUESTS: "True"
 #  DATABASE_URI: "sqlite:///db/amiss.db"
-#  SEED_DUMMY_SEGMENTS_DATA: "False"
 #  STATIC_DIRECTORY: "static"
+#  NSA_SCHEME: "http"
+#  NSA_HOST: "localhost"
+#  NSA_PORT: "8080"
+#  NSA_PATH_PREFIX: ""
+#  NSI_PROVIDER_URL: "http://127.0.0.1:9000/nsi-v2/ConnectionServiceProvider"
+#  NSI_PROVIDER_ID: "urn:ogf:network:domain.example:2024:nsa"
+#  NSI_DDS_PROXY_URL: "http://dds.domain.example/dds/"
 #  SQL_LOGGING: "False"
 #  LOG_LEVEL: "INFO"
 
@@ -165,10 +166,7 @@ autoscaling:
   targetCPUUtilizationPercentage: 80
   # targetMemoryUtilizationPercentage: 80
 
-# Persistent Volume Claim for the database.
-# Disabled by default: the default DATABASE_URI is ephemeral in-memory SQLite, so nothing needs a volume.
-# To actually persist, set enabled: true AND add a matching volumeMounts entry (e.g. mountPath: /db)
-# AND point DATABASE_URI at it (e.g. sqlite:///db/amiss.db) or use a PostgreSQL DATABASE_URI instead.
+# Persistent Volume Claim for db
 persistence:
   enabled: false
   name: db

@@ -20,7 +20,6 @@ from fastui.components import FireEvent
 from fastui.events import GoToEvent
 from fastui.forms import fastui_form
 from pydantic import BaseModel, Field
-from sqlmodel import col
 
 from amiss.db import Session
 from amiss.frontend.util import app_page, button_row, stp_table
@@ -39,7 +38,7 @@ async def stp() -> list[AnyComponent]:
 def stp_active() -> list[AnyComponent]:
     """Display all active STP in a table."""
     with Session() as session:
-        stps = session.query(STP).filter(col(STP.active)).order_by(col(STP.id)).all()
+        stps = session.query(STP).filter(STP.active).order_by(STP.id).all()
     return app_page(
         *tabs(),
         stp_table(stps),
@@ -51,7 +50,7 @@ def stp_active() -> list[AnyComponent]:
 def stp_inactive() -> list[AnyComponent]:
     """Display all inactive STP in a table."""
     with Session() as session:
-        stps = session.query(STP).filter(col(STP.active).is_(False)).order_by(col(STP.id)).all()
+        stps = session.query(STP).filter(not STP.active).order_by(STP.id).all()
     return app_page(
         *tabs(),
         stp_table(stps),
@@ -63,7 +62,7 @@ def stp_inactive() -> list[AnyComponent]:
 def stp_all() -> list[AnyComponent]:
     """Display all STP in a table."""
     with Session() as session:
-        stps = session.query(STP).order_by(col(STP.id)).all()
+        stps = session.query(STP).order_by(STP.id).all()
     return app_page(
         *tabs(),
         stp_table(stps),
@@ -124,7 +123,7 @@ class StpUpdateForm(BaseModel):
 @router.post("/{id}/update", response_model=FastUI, response_model_exclude_none=True)
 def stp_update(id: int, form: Annotated[StpUpdateForm, fastui_form(StpUpdateForm)]) -> list[FireEvent]:
     with Session.begin() as session:
-        stp = session.query(STP).filter(col(STP.id) == id).one_or_none()
+        stp = session.query(STP).filter(STP.id == id).one_or_none()
         if stp is not None:
             stp.description = form.description
     return [c.FireEvent(event=GoToEvent(url=f"/stp/{id}/"))]

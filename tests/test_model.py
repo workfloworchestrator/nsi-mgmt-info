@@ -20,7 +20,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from amiss.model import Reservation, Segment
+from amiss.model import STP, Reservation, Segment
 
 
 def _reservation_data(**overrides):

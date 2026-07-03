@@ -28,8 +28,8 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
-from sqlmodel import Session as SQLModelSession
-from sqlmodel import SQLModel, create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlmodel import Session as SQLModelSession, SQLModel, create_engine
 
 from amiss.log import DatabaseLogHandler
 from amiss.model import SDP, STP, Reservation, Segment

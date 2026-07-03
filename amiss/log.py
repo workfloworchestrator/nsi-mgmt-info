@@ -79,7 +79,7 @@ class UvicornAccessLogFilter(Filter):
 
         Currently only filter out /healthcheck access messages.
         """
-        if isinstance(record.args, tuple) and len(record.args) >= 3:
+        if record.args and len(record.args) >= 3:
             if record.args[2] in ["/healthcheck"]:
                 return False
         return True

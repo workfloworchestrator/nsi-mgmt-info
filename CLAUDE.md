@@ -23,9 +23,8 @@ uv run --group dev pytest tests/ -k "test_free_vlan_ranges"
 # Type checking
 uv run --group dev mypy amiss/
 
-# Linting and format check (matches CI)
-uv run --group dev ruff check .
-uv run --group dev ruff format --check .
+# Linting
+uv run --group dev ruff check amiss/
 
 # Build wheel
 uv build --wheel
@@ -44,7 +43,9 @@ nsi-mgmt-info
 
 **Background jobs** (`amiss/job.py`): APScheduler with ThreadPoolExecutor (10 workers). `nsi_poll_sources` is scheduled every minute and calls `nsi_poll_dds_job` then `nsi_poll_agg_job` (DDS first, so STPs/SDPs exist before reservations resolve against them). `nsi_poll_dds_job` wipes the `STP`/`SDP` tables and repopulates them from the **DDS proxy** (`GET /service-termination-points` and `/service-demarcation-points`), setting `isSdpMember=True` on SDP-member STPs. `nsi_poll_agg_job` fetches reservations from the aggregator proxy; it **temporarily** rebuilds the `Reservation` table from them (`temp_pull_reservations_from_agg` — a stopgap until reservations are sourced from the WFO, the Source of Truth) and then upserts their `Segment`s into the DB.
 
-**NSI integration** (`amiss/nsi.py`, `amiss/dds.py`): mutual-TLS HTTP to the proxies. `nsi.py` is now just the JSON `GET` helper (`nsi_util_get_json`) used by the proxy pollers — AMISS no longer sends NSI SOAP commands and has no inbound provider callback. `dds.py` fetches and parses STP/SDP data from the **nsi-dds-proxy** JSON API (`get_dds_proxy_stps`/`get_dds_proxy_sdps` + `dds_proxy_json_to_stps`/`dds_proxy_json_to_sdps`).
+**NSI integration** (`amiss/nsi.py`, `amiss/dds.py`): mutual-TLS HTTP to the proxies. `nsi.py` is now just the JSON `GET` helper (`nsi_util_get_json`) used by the proxy pollers — AMISS no longer sends NSI SOAP commands and has no inbound provider callback. `dds.py` fetches and parses STP/SDP data from the **nsi-dds-proxy** JSON API (`get_dds_proxy_stps`/`get_dds_proxy_sdps` + `dds_proxy_json_to_stps`/`dds_proxy_json_to_sdps`). `amiss/wfo.py` (`pull_reservations_from_wfo`) queries the WFO GraphQL API (`<NSI_AMISS_WFO_URL>/api/graphql`) — scaffolding for the future WFO-sourced reservations; not yet wired into a job.
+
+> **TODO (timeouts):** `nsi_util_get_json` calls `requests` with **no request timeout**, so an unreachable or stalled upstream (DDS proxy, aggregator proxy, or WFO) hangs the caller indefinitely — including the scheduled `nsi_poll_sources` job. This needs a per-request timeout (and ideally ret/backoff review) in a future change.
 
 **Database** (`amiss/db.py`, `amiss/model.py`): SQLModel ORM. Defaults to a shared **in-memory** SQLite database (`sqlite:///file::memory:?cache=shared&uri=true`, ephemeral — no persistence; `db.py` uses a `StaticPool` + `check_same_thread=False` for in-memory SQLite so the DB survives across the APScheduler/FastAPI threads). File-based SQLite or PostgreSQL via `DATABASE_URI`. Table models: `STP` (network endpoints; `isSdpMember` marks those that are part of an SDP), `SDP` (demarcation points connecting two STPs via `stpA`/`stpZ`), `Reservation` (connection requests with state machine; references source/dest `STP` and links many-to-many to `SDP`), `ReservationSDPLink` (the Reservation↔SDP association table), `Segment` (a path segment of an NSI P2P circuit shaped after the nsi-aggregator-proxy API; child of a `Reservation` via the `reservation_id` FK, parsed and upserted in `amiss/agg.py`), `Log` (audit trail).
 
@@ -71,8 +72,7 @@ The test setup in `conftest.py` has important ordering constraints:
 
 ## Code style
 
-- Line length: 120
-- Formatting and linting: `ruff format` + `ruff check` (ruff is the single tool — black/isort/flake8 removed)
+- Line length: 120 (black, isort, ruff all configured consistently)
 - Python target: 3.13
 - mypy with `pydantic.mypy` plugin, `disallow_untyped_defs = true`
-- ruff rules: ANN, ARG, B, C, D, E, F, I, N, PGH, PTH, Q, RET, RUF, S, T, W; tests exempt from ANN/S101/docstring rules via `per-file-ignores`
+- ruff rules: ANN, ARG, B, C, D, E, F, I, N, PGH, PTH, Q, RET, RUF, S, T, W

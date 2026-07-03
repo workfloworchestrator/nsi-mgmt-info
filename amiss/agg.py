@@ -56,7 +56,6 @@ logger = structlog.get_logger(__name__)
 }
 """
 
-
 def get_aggregator_reservations(proxy_url: HttpUrl) -> bytes | None:
     """Fetch all reservations with full segment detail from the aggregator proxy.
 
@@ -104,8 +103,8 @@ def segdicts_to_segments(reservation_id: int, segdicts: list) -> list[Segment]:
                 providerNSA=providerNSA,
                 serviceType=serviceType,
                 capacity=capacity,
-                sourceStp=sourceStpUrn[len("urn:ogf:network:") :],
-                destStp=destStpUrn[len("urn:ogf:network:") :],
+                sourceStp=sourceStpUrn,
+                destStp=destStpUrn,
                 status=status,
             )
         )
@@ -240,3 +239,4 @@ def temp_pull_reservations_from_agg(reservations: list) -> None:
                 )
             )
             log.info("added reservation from aggregator")
+

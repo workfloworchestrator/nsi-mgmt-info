@@ -130,9 +130,7 @@ class TestDdsProxyJsonToStps:
     def test_maps_fields_and_strips_urn(self):
         from amiss.dds import dds_proxy_json_to_stps
 
-        stps = dds_proxy_json_to_stps(
-            [_stp_dict(id="urn:ogf:network:example:2024:topo:ps1", name="node 1", labelGroup="100-200")]
-        )
+        stps = dds_proxy_json_to_stps([_stp_dict(id="urn:ogf:network:example:2024:topo:ps1", name="node 1", labelGroup="100-200")])
 
         assert len(stps) == 1
         stp = stps[0]
@@ -202,12 +200,7 @@ class TestDdsProxyJsonToSdps:
         mock = _patch_dds_session(db_session)
         try:
             dds_proxy_json_to_sdps(
-                [
-                    {
-                        "stpAId": "urn:ogf:network:example:2024:topo:ps1",
-                        "stpZId": "urn:ogf:network:example:2024:topo:missing",
-                    }
-                ]
+                [{"stpAId": "urn:ogf:network:example:2024:topo:ps1", "stpZId": "urn:ogf:network:example:2024:topo:missing"}]
             )
             assert db_session.query(SDP).count() == 0
         finally:

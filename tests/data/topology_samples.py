@@ -89,7 +89,9 @@ MOXY_TOPOLOGY = {
                         ],
                     },
                 ],
-                "serviceDefinition": {"id": "urn:ogf:network:moxy.ana.dlp.surfnet.nl:2024:ana-moxy:sd:EVTS.A-GOLE"},
+                "serviceDefinition": {
+                    "id": "urn:ogf:network:moxy.ana.dlp.surfnet.nl:2024:ana-moxy:sd:EVTS.A-GOLE"
+                },
             },
         },
         {
@@ -119,7 +121,9 @@ MOXY_TOPOLOGY = {
                     "LabelGroup": "1330-1429",
                     "Relation": {
                         "type": "http://schemas.ogf.org/nml/2013/05/base#isAlias",
-                        "PortGroup": {"id": "urn:ogf:network:surf.ana.dlp.surfnet.nl:2024:ana-surf:ana-link-1:out"},
+                        "PortGroup": {
+                            "id": "urn:ogf:network:surf.ana.dlp.surfnet.nl:2024:ana-surf:ana-link-1:out"
+                        },
                     },
                     "capacity": "100000000000",
                     "granularity": "1000000",
@@ -132,7 +136,9 @@ MOXY_TOPOLOGY = {
                     "LabelGroup": "88-97",
                     "Relation": {
                         "type": "http://schemas.ogf.org/nml/2013/05/base#isAlias",
-                        "PortGroup": {"id": "urn:ogf:network:surf.ana.dlp.surfnet.nl:2024:ana-surf:ana-link-2:out"},
+                        "PortGroup": {
+                            "id": "urn:ogf:network:surf.ana.dlp.surfnet.nl:2024:ana-surf:ana-link-2:out"
+                        },
                     },
                     "capacity": "100000000000",
                     "granularity": "1000000",
@@ -168,7 +174,9 @@ MOXY_TOPOLOGY = {
                     "LabelGroup": "1330-1429",
                     "Relation": {
                         "type": "http://schemas.ogf.org/nml/2013/05/base#isAlias",
-                        "PortGroup": {"id": "urn:ogf:network:surf.ana.dlp.surfnet.nl:2024:ana-surf:ana-link-1:in"},
+                        "PortGroup": {
+                            "id": "urn:ogf:network:surf.ana.dlp.surfnet.nl:2024:ana-surf:ana-link-1:in"
+                        },
                     },
                     "capacity": "100000000000",
                     "granularity": "1000000",
@@ -181,7 +189,9 @@ MOXY_TOPOLOGY = {
                     "LabelGroup": "88-97",
                     "Relation": {
                         "type": "http://schemas.ogf.org/nml/2013/05/base#isAlias",
-                        "PortGroup": {"id": "urn:ogf:network:surf.ana.dlp.surfnet.nl:2024:ana-surf:ana-link-2:in"},
+                        "PortGroup": {
+                            "id": "urn:ogf:network:surf.ana.dlp.surfnet.nl:2024:ana-surf:ana-link-2:in"
+                        },
                     },
                     "capacity": "100000000000",
                     "granularity": "1000000",

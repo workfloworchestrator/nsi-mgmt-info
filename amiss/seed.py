@@ -38,47 +38,17 @@ STP_VLAN_RANGE = "2-4094"
 
 # Dummy STPs: (stpId, description, isSdpMember). isSdpMember is True for STPs that are part of an SDP.
 DUMMY_STPS: list[dict] = [
-    {
-        "stpId": "internet2.edu:2025:ana:manlan.ps1",
-        "description": "MANLAN ps1 (Internet2 endpoint)",
-        "isSdpMember": False,
-    },
-    {
-        "stpId": "internet2.edu:2025:ana:manlan.moxy-1",
-        "description": "MANLAN MOXY ANA link (Internet2)",
-        "isSdpMember": True,
-    },
-    {
-        "stpId": "internet2.edu:2025:ana:manlan.netherlight-1",
-        "description": "MANLAN NetherLight ANA link (Internet2)",
-        "isSdpMember": True,
-    },
-    {
-        "stpId": "surf.nl:2020:ana:netherlight.moxy-1",
-        "description": "NetherLight MOXY ANA link (SURF)",
-        "isSdpMember": True,
-    },
-    {
-        "stpId": "surf.nl:2020:ana:netherlight.ps1",
-        "description": "NetherLight ps1 (SURF endpoint)",
-        "isSdpMember": True,
-    },
+    {"stpId": "internet2.edu:2025:ana:manlan.ps1", "description": "MANLAN ps1 (Internet2 endpoint)", "isSdpMember": False},
+    {"stpId": "internet2.edu:2025:ana:manlan.moxy-1", "description": "MANLAN MOXY ANA link (Internet2)", "isSdpMember": True},
+    {"stpId": "internet2.edu:2025:ana:manlan.netherlight-1", "description": "MANLAN NetherLight ANA link (Internet2)", "isSdpMember": True},
+    {"stpId": "surf.nl:2020:ana:netherlight.moxy-1", "description": "NetherLight MOXY ANA link (SURF)", "isSdpMember": True},
+    {"stpId": "surf.nl:2020:ana:netherlight.ps1", "description": "NetherLight ps1 (SURF endpoint)", "isSdpMember": True},
 ]
 
 # Dummy SDPs: the ANA inter-domain links the reservations cross (stpA/stpZ given as stpIds).
 DUMMY_SDPS: list[dict] = [
-    {
-        "stpA": "internet2.edu:2025:ana:manlan.moxy-1",
-        "stpZ": "surf.nl:2020:ana:netherlight.moxy-1",
-        "vlanRange": "139,481",
-        "description": "ANA MOXY link: MANLAN <-> NetherLight",
-    },
-    {
-        "stpA": "internet2.edu:2025:ana:manlan.netherlight-1",
-        "stpZ": "surf.nl:2020:ana:netherlight.ps1",
-        "vlanRange": "868",
-        "description": "ANA NEA3R link: MANLAN <-> NetherLight",
-    },
+    {"stpA": "internet2.edu:2025:ana:manlan.moxy-1", "stpZ": "surf.nl:2020:ana:netherlight.moxy-1", "vlanRange": "139,481", "description": "ANA MOXY link: MANLAN <-> NetherLight"},
+    {"stpA": "internet2.edu:2025:ana:manlan.netherlight-1", "stpZ": "surf.nl:2020:ana:netherlight.ps1", "vlanRange": "868", "description": "ANA NEA3R link: MANLAN <-> NetherLight"},
 ]
 
 # All dummy reservations share these endpoint STPs.
@@ -88,110 +58,21 @@ RESERVATION_DEST_STP = "surf.nl:2020:ana:netherlight.ps1"
 # Parent reservation NSI connectionId (UUID string) -> {description, sdp}. "sdp" is the stpA stpId of
 # the SDP this reservation traverses (used to link Reservation <-> SDP).
 DUMMY_RESERVATIONS: dict[str, dict] = {
-    "663EF9C9-34E7-4401-ADD1-E976072B526B": {
-        "description": "MOXY multi-domain connection (dummy)",
-        "sdp": "internet2.edu:2025:ana:manlan.moxy-1",
-    },
-    "193E4258-5AC3-4A99-A6C3-440DF9575E0A": {
-        "description": "MOXY multi-domain connection 2 (dummy)",
-        "sdp": "internet2.edu:2025:ana:manlan.moxy-1",
-    },
-    "35A542F5-9657-4EC0-96CE-4DD8A8EB5AB9": {
-        "description": "NEA3R multi-domain connection (dummy)",
-        "sdp": "internet2.edu:2025:ana:manlan.netherlight-1",
-    },
+    "663EF9C9-34E7-4401-ADD1-E976072B526B": {"description": "MOXY multi-domain connection (dummy)", "sdp": "internet2.edu:2025:ana:manlan.moxy-1"},
+    "193E4258-5AC3-4A99-A6C3-440DF9575E0A": {"description": "MOXY multi-domain connection 2 (dummy)", "sdp": "internet2.edu:2025:ana:manlan.moxy-1"},
+    "35A542F5-9657-4EC0-96CE-4DD8A8EB5AB9": {"description": "NEA3R multi-domain connection (dummy)", "sdp": "internet2.edu:2025:ana:manlan.netherlight-1"},
 }
 
 # Dummy child segments. ``reservation_connectionId`` references a key in DUMMY_RESERVATIONS above.
 DUMMY_SEGMENTS: list[dict] = [
-    {
-        "connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C830",
-        "reservation_connectionId": "663EF9C9-34E7-4401-ADD1-E976072B526B",
-        "order": 0,
-        "providerNSA": "SupaDuppa",
-        "serviceType": "EVTS.A-GOLE",
-        "capacity": 32768,
-        "sourceStp": "internet2.edu:2025:ana:manlan.ps1",
-        "destStp": "internet2.edu:2025:ana:manlan.moxy-1?vlan=481",
-        "status": "ACTIVE",
-    },
-    {
-        "connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C831",
-        "reservation_connectionId": "663EF9C9-34E7-4401-ADD1-E976072B526B",
-        "order": 1,
-        "providerNSA": "SupaDuppa",
-        "serviceType": "EVTS.A-GOLE",
-        "capacity": 32768,
-        "sourceStp": "internet2.edu:2025:ana:manlan.moxy-1?vlan=481",
-        "destStp": "surf.nl:2020:ana:netherlight.moxy-1?vlan=481",
-        "status": "ACTIVE",
-    },
-    {
-        "connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C832",
-        "reservation_connectionId": "663EF9C9-34E7-4401-ADD1-E976072B526B",
-        "order": 2,
-        "providerNSA": "SupaDuppa",
-        "serviceType": "EVTS.A-GOLE",
-        "capacity": 32768,
-        "sourceStp": "surf.nl:2020:ana:netherlight.moxy-1?vlan=481",
-        "destStp": "surf.nl:2020:ana:netherlight.ps1",
-        "status": "ACTIVE",
-    },
-    {
-        "connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C833",
-        "reservation_connectionId": "193E4258-5AC3-4A99-A6C3-440DF9575E0A",
-        "order": 0,
-        "providerNSA": "SupaDuppa",
-        "serviceType": "EVTS.A-GOLE",
-        "capacity": 32768,
-        "sourceStp": "internet2.edu:2025:ana:manlan.ps1",
-        "destStp": "internet2.edu:2025:ana:manlan.moxy-1?vlan=139",
-        "status": "ACTIVE",
-    },
-    {
-        "connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C834",
-        "reservation_connectionId": "193E4258-5AC3-4A99-A6C3-440DF9575E0A",
-        "order": 1,
-        "providerNSA": "SupaDuppa",
-        "serviceType": "EVTS.A-GOLE",
-        "capacity": 32768,
-        "sourceStp": "internet2.edu:2025:ana:manlan.moxy-1?vlan=139",
-        "destStp": "surf.nl:2020:ana:netherlight.moxy-1?vlan=139",
-        "status": "ACTIVE",
-    },
-    {
-        "connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C836",
-        "reservation_connectionId": "193E4258-5AC3-4A99-A6C3-440DF9575E0A",
-        "order": 2,
-        "providerNSA": "SupaDuppa",
-        "serviceType": "EVTS.A-GOLE",
-        "capacity": 32768,
-        "sourceStp": "surf.nl:2020:ana:netherlight.moxy-1?vlan=139",
-        "destStp": "surf.nl:2020:ana:netherlight.ps1",
-        "status": "ACTIVE",
-    },
-    {
-        "connectionId": "BA676DA4-F232-45C8-9CF4-079D9D8BE560",
-        "reservation_connectionId": "35A542F5-9657-4EC0-96CE-4DD8A8EB5AB9",
-        "order": 0,
-        "providerNSA": "SupaDuppa",
-        "serviceType": "EVTS.A-GOLE",
-        "capacity": 32768,
-        "sourceStp": "internet2.edu:2025:ana:manlan.ps1",
-        "destStp": "internet2.edu:2025:ana:manlan.netherlight-1?vlan=868",
-        "status": "ACTIVE",
-    },
-    {
-        "connectionId": "BA676DA4-F232-45C8-9CF4-079D9D8BE561",
-        "reservation_connectionId": "35A542F5-9657-4EC0-96CE-4DD8A8EB5AB9",
-        "order": 1,
-        "providerNSA": "SupaDuppa",
-        "serviceType": "EVTS.A-GOLE",
-        "capacity": 32768,
-        "sourceStp": "internet2.edu:2025:ana:manlan.netherlight-1?vlan=868",
-        "destStp": "surf.nl:2020:ana:netherlight.ps1",
-        "status": "ACTIVE",
-    },
+    {"connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C830", "reservation_connectionId": "663EF9C9-34E7-4401-ADD1-E976072B526B", "order": 0, "providerNSA": "SupaDuppa", "serviceType": "EVTS.A-GOLE", "capacity": 32768, "sourceStp": "internet2.edu:2025:ana:manlan.ps1", "destStp": "internet2.edu:2025:ana:manlan.moxy-1?vlan=481", "status": "ACTIVE"},
+    {"connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C831", "reservation_connectionId": "663EF9C9-34E7-4401-ADD1-E976072B526B", "order": 1, "providerNSA": "SupaDuppa", "serviceType": "EVTS.A-GOLE", "capacity": 32768, "sourceStp": "internet2.edu:2025:ana:manlan.moxy-1?vlan=481", "destStp": "surf.nl:2020:ana:netherlight.moxy-1?vlan=481", "status": "ACTIVE"},
+    {"connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C832", "reservation_connectionId": "663EF9C9-34E7-4401-ADD1-E976072B526B", "order": 2, "providerNSA": "SupaDuppa", "serviceType": "EVTS.A-GOLE", "capacity": 32768, "sourceStp": "surf.nl:2020:ana:netherlight.moxy-1?vlan=481", "destStp": "surf.nl:2020:ana:netherlight.ps1", "status": "ACTIVE"},
+    {"connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C833", "reservation_connectionId": "193E4258-5AC3-4A99-A6C3-440DF9575E0A", "order": 0, "providerNSA": "SupaDuppa", "serviceType": "EVTS.A-GOLE", "capacity": 32768, "sourceStp": "internet2.edu:2025:ana:manlan.ps1", "destStp": "internet2.edu:2025:ana:manlan.moxy-1?vlan=139", "status": "ACTIVE"},
+    {"connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C834", "reservation_connectionId": "193E4258-5AC3-4A99-A6C3-440DF9575E0A", "order": 1, "providerNSA": "SupaDuppa", "serviceType": "EVTS.A-GOLE", "capacity": 32768, "sourceStp": "internet2.edu:2025:ana:manlan.moxy-1?vlan=139", "destStp": "surf.nl:2020:ana:netherlight.moxy-1?vlan=139", "status": "ACTIVE"},
+    {"connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C836", "reservation_connectionId": "193E4258-5AC3-4A99-A6C3-440DF9575E0A", "order": 2, "providerNSA": "SupaDuppa", "serviceType": "EVTS.A-GOLE", "capacity": 32768, "sourceStp": "surf.nl:2020:ana:netherlight.moxy-1?vlan=139", "destStp": "surf.nl:2020:ana:netherlight.ps1", "status": "ACTIVE"},
+    {"connectionId": "BA676DA4-F232-45C8-9CF4-079D9D8BE560", "reservation_connectionId": "35A542F5-9657-4EC0-96CE-4DD8A8EB5AB9", "order": 0, "providerNSA": "SupaDuppa", "serviceType": "EVTS.A-GOLE", "capacity": 32768, "sourceStp": "internet2.edu:2025:ana:manlan.ps1", "destStp": "internet2.edu:2025:ana:manlan.netherlight-1?vlan=868", "status": "ACTIVE"},
+    {"connectionId": "BA676DA4-F232-45C8-9CF4-079D9D8BE561", "reservation_connectionId": "35A542F5-9657-4EC0-96CE-4DD8A8EB5AB9", "order": 1, "providerNSA": "SupaDuppa", "serviceType": "EVTS.A-GOLE", "capacity": 32768, "sourceStp": "internet2.edu:2025:ana:manlan.netherlight-1?vlan=868", "destStp": "surf.nl:2020:ana:netherlight.ps1", "status": "ACTIVE"},
 ]
 
 

@@ -19,12 +19,10 @@ from uuid import UUID, uuid4
 
 from pydantic import HttpUrl
 
-from amiss.model import Reservation, Segment
+from amiss.model import STP, Reservation, Segment
 
 
-def _segdict(
-    connectionId="child-seg-0", order=0, capacity=1000, sourceSTP="src?vlan=1", destSTP="dst?vlan=2", status="ACTIVATED"
-):
+def _segdict(connectionId="child-seg-0", order=0, capacity=1000, sourceSTP="src?vlan=1", destSTP="dst?vlan=2", status="ACTIVATED"):
     return {
         "order": order,
         "connectionId": connectionId,
@@ -148,9 +146,7 @@ class TestUpdateSegments:
 
         mock = _patch_session(db_session)
         try:
-            update_segments(
-                str(parent.connectionId), [_segdict(connectionId="s1"), _segdict(connectionId="s2", order=1)]
-            )
+            update_segments(str(parent.connectionId), [_segdict(connectionId="s1"), _segdict(connectionId="s2", order=1)])
 
             stored = db_session.query(Segment).all()
             assert {s.connectionId for s in stored} == {"s1", "s2"}
@@ -177,9 +173,7 @@ class TestUpdateSegments:
         finally:
             mock.stop()
 
-    def test_hard_deletes_vanished_segments_scoped_to_reservation(
-        self, db_session, reservation_factory, segment_factory
-    ):
+    def test_hard_deletes_vanished_segments_scoped_to_reservation(self, db_session, reservation_factory, segment_factory):
         from amiss.agg import update_segments
 
         parent = reservation_factory()

@@ -30,10 +30,9 @@ class Settings(BaseSettings):
     NSI_AMISS_HOST: str = "127.0.0.1"
     NSI_AMISS_PORT: int = 8000
 
-    # certificate and key for mutual TLS to the NSI proxies. Only required when
-    # NSI_PROXY_MTLS_ENABLED is true; left unset for local dev / header auth.
-    NSI_AMISS_CERTIFICATE: FilePath | None = None
-    NSI_AMISS_PRIVATE_KEY: FilePath | None = None
+    # certificate en key to authenticate against NSI control plane
+    NSI_AMISS_CERTIFICATE: FilePath = FilePath("amiss-certificate.pem")
+    NSI_AMISS_PRIVATE_KEY: FilePath = FilePath("amiss-private-key.pem")
 
     # override use of default CA bundle with certificates from a file or directory
     CA_CERTIFICATES: FilePath | DirectoryPath | None = None
@@ -63,19 +62,10 @@ class Settings(BaseSettings):
     NSI_PROVIDER_URL: HttpUrl = HttpUrl("http://127.0.0.1:9000/nsi-v2/ConnectionServiceProvider")
     NSI_PROVIDER_ID: str = "urn:ogf:network:domain.example:2024:nsa"
     NSI_DDS_PROXY_URL: HttpUrl = HttpUrl("http://dds.domain.example/dds/")
-    NSI_AGG_PROXY_URL: HttpUrl = HttpUrl("http://aggregator-proxy.domain.example/")
+    NSI_AGG_PROXY_URL:  HttpUrl = HttpUrl("http://aggregator-proxy.domain.example/")
 
-    # Proxy authentication. Production uses mutual TLS (NSI_AMISS_CERTIFICATE/PRIVATE_KEY above).
-    # For local development against port-forwarded proxies (mTLS terminated at the ingress), set
-    # NSI_PROXY_MTLS_ENABLED=false to instead send the edge-identity headers the proxies would
-    # otherwise receive from the ingress (X-Auth-Method / X-Client-DN). Both proxies trust the
-    # same edge identity. Mirrors nsi-orchestrator's services/edge_auth.py.
-    NSI_PROXY_MTLS_ENABLED: bool = True
-    NSI_PROXY_AUTH_METHOD: str = "x509"
-    NSI_PROXY_CLIENT_DN: str = "CN=claude@local.laptop"
-
-    # upstream WFO (workflow orchestrator) management URL
-    NSI_AMISS_WFO_URL: HttpUrl = HttpUrl("http://orchestrator.domain.example/mgmt")
+    # upstream WFO (workflow orchestrator) URL (GraphQL API is at <this>/api/graphql)
+    NSI_AMISS_WFO_URL: HttpUrl = HttpUrl("https://orchestrator.automation.surf.net")
 
     # Logging
     SQL_LOGGING: bool = False

@@ -37,7 +37,9 @@ def _segment_table_data(components):
 
 
 class TestSpectrumDetail:
-    def test_matches_segments_by_source_stp_stripping_vlan(self, db_session, stp_factory, sdp_factory, segment_factory):
+    def test_matches_segments_by_source_stp_stripping_vlan(
+        self, db_session, stp_factory, sdp_factory, segment_factory
+    ):
         from amiss.frontend.spectrum import spectrum_detail
 
         stp_a = stp_factory(stpId="internet2.edu:2025:ana:manlan.ps1")
@@ -52,9 +54,7 @@ class TestSpectrumDetail:
 
         db_session.add(segment_factory(connectionId="match-a", sourceStp="internet2.edu:2025:ana:manlan.ps1"))
         db_session.add(segment_factory(connectionId="match-z", sourceStp="surf.nl:2020:ana:netherlight.ps1?vlan=481"))
-        db_session.add(
-            segment_factory(connectionId="no-match", sourceStp="some.other:2025:stp", destStp="some.other:2026:stp")
-        )
+        db_session.add(segment_factory(connectionId="no-match", sourceStp="some.other:2025:stp"))
         db_session.flush()
 
         mock = _patch_session(db_session)

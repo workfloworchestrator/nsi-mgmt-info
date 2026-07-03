@@ -24,8 +24,8 @@ from amiss.frontend.healthcheck import router as healthcheck_router
 from amiss.frontend.home import router as home_router
 from amiss.frontend.reservations import router as reservations_router
 from amiss.frontend.sdp import router as sdp_router
-from amiss.frontend.spectrum import router as spectrum_router
 from amiss.frontend.stp import router as stp_router
+from amiss.frontend.spectrum import router as spectrum_router
 from amiss.job import nsi_poll_sources, scheduler
 from amiss.log import init as log_init
 from amiss.seed import seed

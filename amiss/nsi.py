@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
-
 import requests
 import requests.exceptions
 import structlog
@@ -35,23 +33,6 @@ session.mount("http://", requests_session_adapter)
 session.mount("https://", requests_session_adapter)
 
 
-def _request_auth_kwargs() -> dict[str, Any]:
-    """Build the authentication kwargs for proxy requests: mutual TLS, or local-dev headers.
-
-    Production uses mutual TLS. With ``NSI_PROXY_MTLS_ENABLED=false`` (local dev against
-    port-forwarded proxies) the edge-identity headers the ingress would otherwise inject are sent
-    instead, matching nsi-orchestrator's ``services/edge_auth.py``.
-    """
-    if settings.NSI_PROXY_MTLS_ENABLED:
-        if settings.NSI_AMISS_CERTIFICATE is None or settings.NSI_AMISS_PRIVATE_KEY is None:
-            raise RuntimeError("NSI_PROXY_MTLS_ENABLED is true but NSI_AMISS_CERTIFICATE/PRIVATE_KEY are unset")
-        return {
-            "verify": settings.verify,
-            "cert": (str(settings.NSI_AMISS_CERTIFICATE), str(settings.NSI_AMISS_PRIVATE_KEY)),
-        }
-    return {"headers": {"X-Auth-Method": settings.NSI_PROXY_AUTH_METHOD, "X-Client-DN": settings.NSI_PROXY_CLIENT_DN}}
-
-
 def nsi_util_get_json(url: HttpUrl, queryparams: dict) -> bytes | None:
     """Fetch JSON from a proxy endpoint; return the raw response body as bytes, or None on failure."""
     log = logger.bind()
@@ -66,7 +47,11 @@ def nsi_util_get_json(url: HttpUrl, queryparams: dict) -> bytes | None:
             qstr = str(k) + "=" + str(v)
             fullurl += "&" + qstr
 
-        r = session.get(fullurl, **_request_auth_kwargs())
+        r = session.get(
+            fullurl,
+            verify=settings.verify,
+            cert=(str(settings.NSI_AMISS_CERTIFICATE), str(settings.NSI_AMISS_PRIVATE_KEY)),
+        )
     except requests.exceptions.ConnectionError as e:
         log.warning("cannot get JSON document", url=str(url), error=str(e))
         return None
