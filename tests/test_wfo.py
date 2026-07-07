@@ -17,6 +17,8 @@
 import json
 from unittest.mock import patch
 
+import pytest
+
 NOT_AUTHENTICATED = json.dumps(
     {
         "data": None,
@@ -33,11 +35,20 @@ NOT_AUTHENTICATED = json.dumps(
 
 
 class TestPullReservationsFromWfo:
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            pytest.param(NOT_AUTHENTICATED, id="graphql-errors"),
+            pytest.param(None, id="fetch-failed"),
+            pytest.param(b"<html>not json</html>", id="invalid-json"),
+            pytest.param(b"[]", id="not-a-json-object"),
+        ],
+    )
     @patch("amiss.wfo.nsi_util_get_json")
-    def test_returns_none_on_graphql_errors(self, mock_get):
+    def test_returns_none(self, mock_get, raw):
         from amiss.wfo import pull_reservations_from_wfo
 
-        mock_get.return_value = NOT_AUTHENTICATED
+        mock_get.return_value = raw
         assert pull_reservations_from_wfo() is None
 
     @patch("amiss.wfo.nsi_util_get_json")
@@ -47,20 +58,6 @@ class TestPullReservationsFromWfo:
         data = {"subscriptions": {"page": [{"subscriptionId": "abc", "description": "node-1", "node": {"name": "n1"}}]}}
         mock_get.return_value = json.dumps({"data": data, "errors": None}).encode()
         assert pull_reservations_from_wfo() == data
-
-    @patch("amiss.wfo.nsi_util_get_json")
-    def test_returns_none_when_fetch_fails(self, mock_get):
-        from amiss.wfo import pull_reservations_from_wfo
-
-        mock_get.return_value = None
-        assert pull_reservations_from_wfo() is None
-
-    @patch("amiss.wfo.nsi_util_get_json")
-    def test_returns_none_on_invalid_json(self, mock_get):
-        from amiss.wfo import pull_reservations_from_wfo
-
-        mock_get.return_value = b"<html>not json</html>"
-        assert pull_reservations_from_wfo() is None
 
     @patch("amiss.wfo.nsi_util_get_json")
     def test_builds_escaped_graphql_url_with_empty_queryparams(self, mock_get):

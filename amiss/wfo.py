@@ -63,6 +63,9 @@ def pull_reservations_from_wfo() -> dict | None:
     except (json.JSONDecodeError, ValueError) as e:
         log.warning("cannot parse WFO GraphQL response", url=str(url), error=str(e))
         return None
+    if not isinstance(result, dict):
+        log.warning("WFO GraphQL response is not a JSON object", url=str(url))
+        return None
     if result.get("errors"):
         log.warning("WFO GraphQL returned errors", errors=result["errors"])
         return None
