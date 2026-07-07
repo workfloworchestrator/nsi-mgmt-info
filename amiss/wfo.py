@@ -27,6 +27,7 @@ logger = structlog.get_logger(__name__)
 
 # Hard-coded GraphQL query (multi-line for readability / future alteration). It is collapsed to a
 # single line and URL-escaped before being appended to the endpoint as ?query=.
+# TODO: placeholder Node query — replace with the reservation/MDP2P query once defined.
 WFO_RESERVATIONS_QUERY = """{
   subscriptions(filterBy: {field: "type", value: "Node"}) {
     page {
