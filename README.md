@@ -34,9 +34,9 @@ All settings can be configured via environment variables or an `amiss.env` file 
 
 | Variable | Default | Description |
 |---|---|---|
-| `NSI_DDS_PROXY_URL` | `http://dds.domain.example/dds/` | Base URL of the **nsi-dds-proxy** — source of topology (STPs and SDPs). |
-| `NSI_AGG_PROXY_URL` | `http://aggregator-proxy.domain.example/` | Base URL of the **nsi-aggregator-proxy** — source of reservations and segments. |
-| `NSI_AMISS_WFO_URL` | `http://orchestrator.domain.example/mgmt` | Base URL of the upstream Workflow Orchestrator (WFO) management API. |
+| `NSI_AMISS_WFO_URL` | `http://orchestrator.domain.example` | Base URL of the **WFO orchestrator** — primary source of circuits and STP/SDP subscriptions. The GraphQL client appends `/api/graphql` and forwards the end-user's OIDC token per request. |
+| `NSI_DDS_PROXY_URL` | `http://dds.domain.example/dds/` | Base URL of the **nsi-dds-proxy** — topology (STPs/SDPs) that the `/stp` and `/sdp` views reconcile against the WFO subscriptions. |
+| `NSI_AGG_PROXY_URL` | `http://aggregator-proxy.domain.example/` | Base URL of the **nsi-aggregator-proxy** — source of spectrum/segments (currently deferred). |
 | `NSI_PROXY_MTLS_ENABLED` | `True` | How AMISS authenticates to the proxies. `True` = mutual TLS with the client cert/key below. `False` = send edge-identity headers (`X-Auth-Method`/`X-Client-DN`) instead — for local dev or in-cluster calls where mTLS is terminated at the ingress. |
 | `NSI_PROXY_AUTH_METHOD` | `x509` | Value sent in the `X-Auth-Method` header when `NSI_PROXY_MTLS_ENABLED=False`. |
 | `NSI_PROXY_CLIENT_DN` | `CN=claude@local.laptop` | Client DN sent in the `X-Client-DN` header when `NSI_PROXY_MTLS_ENABLED=False`. Must be authorized by the proxies. |
@@ -44,8 +44,9 @@ All settings can be configured via environment variables or an `amiss.env` file 
 | `NSI_AMISS_PRIVATE_KEY` | _(unset)_ | Path to the PEM private key for the client certificate. Required only when `NSI_PROXY_MTLS_ENABLED=True`. |
 | `CA_CERTIFICATES` | _(unset)_ | Path to a PEM file or a `c_rehash` directory of CA certificates used to verify the proxies. When unset, the default requests CA bundle is used. |
 | `VERIFY_REQUESTS` | `True` | Verify TLS certificates on outbound requests. Only disable for debugging. |
-| `DATABASE_URI` | `sqlite:///file::memory:?cache=shared&uri=true` | SQLModel database URI. Defaults to ephemeral shared in-memory SQLite; use a file path or PostgreSQL URI to persist. |
-| `SEED_DUMMY_SEGMENTS_DATA` | `False` | Seed dummy reservations/segments at startup (dev/demo only). |
+| `NSI_AMISS_DATABASE_ENABLED` | `False` | When `False` (default) the tables are served live from the WFO/DDS per request and no polling runs. When `True` the scheduler polls upstreams into the database — an opt-in cache for when live querying proves too slow (the WFO-backed poller is a follow-up). |
+| `DATABASE_URI` | `sqlite:///file::memory:?cache=shared&uri=true` | SQLModel database URI, used only when `NSI_AMISS_DATABASE_ENABLED=True`. Defaults to ephemeral shared in-memory SQLite; use a file path or PostgreSQL URI to persist. |
+| `SEED_DUMMY_SEGMENTS_DATA` | `False` | Seed dummy circuits/segments at startup, only when the database is enabled (dev/demo only). |
 | `NSI_AMISS_HOST` | `127.0.0.1` | Interface the server binds to. The container image sets this to `0.0.0.0`. |
 | `NSI_AMISS_PORT` | `8000` | TCP port the server listens on. The container image sets this to `8080`. |
 | `STATIC_DIRECTORY` | `static` | Directory containing static assets (images, templates). |
@@ -121,7 +122,7 @@ docker run --rm \
   -e CA_CERTIFICATES=/certs/ca-bundle.pem \
   -e NSI_DDS_PROXY_URL=https://your-dds-proxy/dds/ \
   -e NSI_AGG_PROXY_URL=https://your-aggregator-proxy/ \
-  -e NSI_AMISS_WFO_URL=https://your-orchestrator-server/mgmt \
+  -e NSI_AMISS_WFO_URL=https://your-orchestrator-server \
   ghcr.io/workfloworchestrator/nsi-mgmt-info:latest
 ```
 
@@ -178,7 +179,7 @@ spec:
             - name: NSI_AGG_PROXY_URL
               value: "https://your-aggregator-proxy/"
             - name: NSI_AMISS_WFO_URL
-              value: "https://your-wfo-server/mgmt"
+              value: "https://your-wfo-server"
             - name: NSI_AMISS_CERTIFICATE
               value: "/certs/client-certificate.pem"
             - name: NSI_AMISS_PRIVATE_KEY
@@ -223,7 +224,7 @@ image:
 env:
   NSI_DDS_PROXY_URL: https://nsi-dds-proxy.your.domain/dds/
   NSI_AGG_PROXY_URL: https://nsi-aggregator-proxy.your.domain/
-  NSI_AMISS_WFO_URL: https://nsi-orchestrator.your.domain/mgmt
+  NSI_AMISS_WFO_URL: https://nsi-orchestrator.your.domain
   CA_CERTIFICATES: /certs/ca-bundle.pem
   NSI_AMISS_CERTIFICATE: /certs/client-certificate.pem
   NSI_AMISS_PRIVATE_KEY: /certs/client-private-key.pem

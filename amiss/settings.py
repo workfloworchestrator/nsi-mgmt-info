@@ -79,8 +79,8 @@ class Settings(BaseSettings):
     NSI_PROXY_AUTH_METHOD: str = "x509"
     NSI_PROXY_CLIENT_DN: str = "CN=claude@local.laptop"
 
-    # upstream WFO (workflow orchestrator) management URL
-    NSI_AMISS_WFO_URL: HttpUrl = HttpUrl("http://orchestrator.domain.example/mgmt")
+    # upstream WFO (workflow orchestrator) base URL; the GraphQL client appends /api/graphql
+    NSI_AMISS_WFO_URL: HttpUrl = HttpUrl("http://orchestrator.domain.example")
 
     # Logging
     SQL_LOGGING: bool = False
