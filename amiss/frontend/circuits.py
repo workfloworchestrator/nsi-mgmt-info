@@ -1,4 +1,4 @@
-# Copyright 2024-2025 SURF.
+# Copyright 2024-2026 SURF.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,158 +12,129 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
-from datetime import datetime
-from typing import AsyncIterable
+from enum import Enum
 
 from fastapi import APIRouter
 from fastui import AnyComponent, FastUI
 from fastui import components as c
 from fastui.events import GoToEvent
-from sqlmodel import col
-from starlette.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from starlette.requests import Request
 
-from amiss.db import Session
+from amiss.data import get_circuits
 from amiss.frontend.util import (
     app_page,
     button_row,
-    circuit_buttons,
-    circuit_header,
     circuit_table,
-    circuit_tabs,
+    error_message,
+    sort_form,
+    sort_rows,
+    token_from_request,
 )
-from amiss.fsm import ConnectionStateMachine
-from amiss.model import Circuit, Log
+from amiss.sources.wfo import CircuitRow, circuit_state_bucket
 
 router = APIRouter()
 
 
-@router.get("", response_model=FastUI, response_model_exclude_none=True)
-async def circuits() -> list[AnyComponent]:
-    """Redirect to active tab of circuits page."""
-    return [c.FireEvent(event=GoToEvent(url="/circuits/active"))]
+class CircuitSort(str, Enum):
+    state = "state"
+    description = "description"
+    start_time = "start_time"
+    source_stp = "source_stp"
+    dest_stp = "dest_stp"
+    created_by = "created_by"
 
 
-@router.get("/{id}/", response_model=FastUI, response_model_exclude_none=True)
-def circuit_details(id: int) -> list[AnyComponent]:
-    """Display circuit details."""
-    with Session() as session:
-        circuit = session.query(Circuit).filter(Circuit.id == id).one_or_none()  # type: ignore[arg-type]
-    if circuit is None:
-        return app_page(title=f"No circuit with id {id}.")
-    return app_page(
-        circuit_buttons(circuit),
-        c.Heading(text="Circuit details", level=5),
-        c.Details(data=circuit),
-        c.Heading(text="SourceStp details", level=5),
-        c.Details(data=circuit.sourceStp),
-        c.Heading(text="DestStp details", level=5),
-        c.Details(data=circuit.destStp),
-        title=f"Circuit {circuit.description}",
-    )
+class CircuitSortForm(BaseModel):
+    sort: CircuitSort | None = Field(default=None, title="Sort by")
 
 
-async def circuit_log_stream(id: int) -> AsyncIterable[str]:
-    lines = []
-    last_timestamp = datetime.fromtimestamp(0)
-    while True:
-        await asyncio.sleep(0.5)
-        with Session() as session:
-            messages = (
-                session.query(Log.message, Log.timestamp)  # type: ignore[call-overload]
-                .filter(Log.circuit_id == id)
-                .filter(Log.timestamp > last_timestamp)
-                .all()
+# (tab key, label, path). The path doubles as the sort form's submit_url so sorting stays in-tab.
+CIRCUIT_TABS = (
+    ("activated", "Activated", "/circuits"),
+    ("failed", "Failed", "/circuits/failed"),
+    ("terminated", "Terminated", "/circuits/terminated"),
+    ("all", "All", "/circuits/all"),
+)
+
+
+def _in_tab(circuit: CircuitRow, tab: str) -> bool:
+    """Whether a circuit belongs in the given tab (the 'all' tab holds everything)."""
+    return tab == "all" or circuit_state_bucket(circuit.state) == tab
+
+
+def _tabs() -> AnyComponent:
+    # FastUI marks the active tab by matching each link's `active` pattern against the current URL.
+    return c.LinkList(
+        links=[
+            c.Link(
+                components=[c.Text(text=label)],
+                on_click=GoToEvent(url=path),
+                # the base path would prefix-match every tab, so match it exactly
+                active=(path if path == "/circuits" else f"startswith:{path}"),
             )
-        for message, timestamp in messages:
-            lines.append(c.Div(components=[c.Text(text=f"{timestamp.isoformat()} - {message}")]))
-            last_timestamp = timestamp
-        m = FastUI(root=lines)  # type: ignore[arg-type]
-        yield f"data: {m.model_dump_json(by_alias=True, exclude_none=True)}\n\n"
-
-
-@router.get("/{id}/log/sse")
-async def circuit_log_sse(id: int) -> StreamingResponse:
-    return StreamingResponse(circuit_log_stream(id), media_type="text/event-stream")
-
-
-@router.get("/{id}/log", response_model=FastUI, response_model_exclude_none=True)
-async def circuit_log(id: int) -> list[AnyComponent]:
-    """Show streaming log for circuit with given id."""
-    with Session() as session:
-        circuit = session.query(Circuit).filter(Circuit.id == id).one_or_none()  # type: ignore[arg-type]
-    if circuit is None:
-        return app_page(title=f"No circuit with id {id}.")
-    return app_page(
-        button_row(
-            [
-                c.Button(
-                    text="Back",
-                    on_click=GoToEvent(url=f"/circuits/{id}/"),
-                    class_name="+ ms-2",
-                )
-            ]
-        ),
-        circuit_header(circuit),
-        c.Div(
-            components=[
-                c.ServerLoad(
-                    path=f"/circuits/{id}/log/sse",
-                    sse=True,
-                    sse_retry=500,
-                ),
-            ],
-            class_name="my-2 p-2 border rounded",
-        ),
-        title=f"Streaming logs {circuit.description}",
+            for _key, label, path in CIRCUIT_TABS
+        ],
+        mode="tabs",
+        class_name="+ mb-4",
     )
+
+
+def _tab_path(tab: str) -> str:
+    return next(path for key, _label, path in CIRCUIT_TABS if key == tab)
+
+
+def _circuits_view(request: Request, tab: str, sort: str | None) -> list[AnyComponent]:
+    path = _tab_path(tab)
+    rows = get_circuits(token_from_request(request))
+    if rows is None:
+        return app_page(
+            _tabs(),
+            error_message("Circuits unavailable: the WFO could not be reached."),
+            title="Circuits",
+        )
+    circuits_in_tab = sort_rows([row for row in rows if _in_tab(row, tab)], sort)
+    return app_page(
+        _tabs(),
+        sort_form(CircuitSortForm, path, sort),
+        circuit_table(circuits_in_tab),
+        title="Circuits",
+    )
+
+
+@router.get("", response_model=FastUI, response_model_exclude_none=True)
+def circuits(request: Request, sort: str | None = None) -> list[AnyComponent]:
+    """Circuits that are neither failed nor terminated (default tab)."""
+    return _circuits_view(request, "activated", sort)
+
+
+@router.get("/failed", response_model=FastUI, response_model_exclude_none=True)
+def circuits_failed(request: Request, sort: str | None = None) -> list[AnyComponent]:
+    """Circuits in the FAILED state."""
+    return _circuits_view(request, "failed", sort)
+
+
+@router.get("/terminated", response_model=FastUI, response_model_exclude_none=True)
+def circuits_terminated(request: Request, sort: str | None = None) -> list[AnyComponent]:
+    """Circuits in the TERMINATED state."""
+    return _circuits_view(request, "terminated", sort)
 
 
 @router.get("/all", response_model=FastUI, response_model_exclude_none=True)
-def circuits_all() -> list[AnyComponent]:
-    """Display overview of all circuits."""
-    with Session() as session:
-        circuits = session.query(Circuit).order_by(col(Circuit.id)).all()
+def circuits_all(request: Request, sort: str | None = None) -> list[AnyComponent]:
+    """All circuits regardless of state."""
+    return _circuits_view(request, "all", sort)
+
+
+@router.get("/{subscription_id}/", response_model=FastUI, response_model_exclude_none=True)
+def circuit_details(request: Request, subscription_id: str) -> list[AnyComponent]:
+    """Display details of a single circuit, re-fetched live by subscription id."""
+    rows = get_circuits(token_from_request(request)) or []
+    circuit = next((row for row in rows if row.subscription_id == subscription_id), None)
+    if circuit is None:
+        return app_page(title=f"No circuit with id {subscription_id}.")
     return app_page(
-        *circuit_tabs(),
-        circuit_table(circuits),
-        title="All circuits",
-    )
-
-
-@router.get("/active", response_model=FastUI, response_model_exclude_none=True)
-def circuits_active() -> list[AnyComponent]:
-    """Display overview of active circuits."""
-    with Session() as session:
-        circuits = (
-            session.query(Circuit)
-            .filter(Circuit.state == ConnectionStateMachine.ConnectionActive.value)
-            .order_by(col(Circuit.id))
-            .all()
-        )
-    return app_page(
-        *circuit_tabs(),
-        circuit_table(circuits),
-        title="Active circuits",
-    )
-
-
-@router.get("/attention", response_model=FastUI, response_model_exclude_none=True)
-def circuits_attention() -> list[AnyComponent]:
-    """Display overview of circuits that need attention."""
-    with Session() as session:
-        circuits = (
-            session.query(Circuit)
-            .filter(
-                (Circuit.state != ConnectionStateMachine.ConnectionActive.value)
-                & (Circuit.state != ConnectionStateMachine.ConnectionTerminating.value)
-                & (Circuit.state != ConnectionStateMachine.ConnectionTerminated.value)
-            )
-            .order_by(col(Circuit.id))
-            .all()
-        )
-    return app_page(
-        *circuit_tabs(),
-        circuit_table(circuits),
-        title="Circuits that need attention",
+        button_row([c.Button(text="Back", on_click=GoToEvent(url="/circuits"), class_name="+ ms-2")]),
+        c.Details(data=circuit),
+        title=f"Circuit {circuit.description}",
     )

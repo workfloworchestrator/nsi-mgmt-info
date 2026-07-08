@@ -41,8 +41,8 @@ classifiers = [
 license = "Apache-2.0"
 license-files = ["LICENSE.txt"]
 
-[tool.setuptools]
-packages = ["amiss", "amiss.frontend"]
+[tool.setuptools.packages.find]
+include = ["amiss*"]
 
 [tool.setuptools.data-files]
 "share/amiss/static" = ["static/*"]
@@ -57,6 +57,7 @@ dev = [
     "types-requests==2.33.0.20260518",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
+    "responses==0.26.2",
 ]
 
 [project.urls]

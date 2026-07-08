@@ -20,10 +20,24 @@ including FastUI prebuilt_html parameters for the React SPA and that
 image paths, form submit URLs, and search URLs are correctly prefixed.
 """
 
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
 from amiss.settings import Settings
+from amiss.sources.reconcile import SdpReconciliation, StpReconciliation
+
+
+@pytest.fixture(autouse=True)
+def _stub_dashboard_sources():
+    """The landing dashboard fetches WFO/DDS live; stub those so `/` renders without network calls."""
+    with (
+        patch("amiss.frontend.home.get_circuits", return_value=[]),
+        patch("amiss.frontend.home.get_stps", return_value=StpReconciliation(rows=[])),
+        patch("amiss.frontend.home.get_sdps", return_value=SdpReconciliation(rows=[])),
+    ):
+        yield
 
 
 @pytest.fixture()
@@ -99,13 +113,13 @@ class TestRootPathRoutes:
         The fix is to NOT set root_path on the FastAPI app.
         """
         client = TestClient(app_with_root_path)
-        resp = client.get("/static/ANA-logo-scaled-ab2.png")
+        resp = client.get("/static/ana-logo-scaled-ab2.png")
         assert resp.status_code == 200
 
     def test_static_files_work_without_root_path(self, test_app):
         """Static files must work in the default (no ROOT_PATH) case."""
         client = TestClient(test_app)
-        resp = client.get("/static/ANA-logo-scaled-ab2.png")
+        resp = client.get("/static/ana-logo-scaled-ab2.png")
         assert resp.status_code == 200
 
 

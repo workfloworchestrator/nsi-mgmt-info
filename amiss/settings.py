@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     # creating a file literally named `file::memory:` on disk.
     DATABASE_URI: str = "sqlite:///file::memory:?cache=shared&uri=true"
 
+    # When False (default) tables are served live from the WFO/DDS per request and no polling runs.
+    # When True the scheduler polls upstreams into the database (an opt-in cache for when live
+    # querying proves too slow).
+    NSI_AMISS_DATABASE_ENABLED: bool = False
+
     # seed dummy parent Circuits and Segments at startup (dev/demo only)
     SEED_DUMMY_SEGMENTS_DATA: bool = False
 
@@ -74,8 +79,8 @@ class Settings(BaseSettings):
     NSI_PROXY_AUTH_METHOD: str = "x509"
     NSI_PROXY_CLIENT_DN: str = "CN=claude@local.laptop"
 
-    # upstream WFO (workflow orchestrator) management URL
-    NSI_AMISS_WFO_URL: HttpUrl = HttpUrl("http://orchestrator.domain.example/mgmt")
+    # upstream WFO (workflow orchestrator) base URL; the GraphQL client appends /api/graphql
+    NSI_AMISS_WFO_URL: HttpUrl = HttpUrl("http://orchestrator.domain.example")
 
     # Logging
     SQL_LOGGING: bool = False
