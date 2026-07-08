@@ -41,8 +41,8 @@ classifiers = [
 license = "Apache-2.0"
 license-files = ["LICENSE.txt"]
 
-[tool.setuptools]
-packages = ["amiss", "amiss.frontend"]
+[tool.setuptools.packages.find]
+include = ["amiss*"]
 
 [tool.setuptools.data-files]
 "share/amiss/static" = ["static/*"]
