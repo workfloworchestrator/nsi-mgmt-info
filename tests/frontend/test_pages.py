@@ -16,21 +16,53 @@
 
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
 
 from amiss import app
+from amiss.frontend.circuits import _in_tab
 from amiss.sources.reconcile import ReconcileStatus, SdpReconciliation, SdpRow, StpReconciliation, StpRow
 from amiss.sources.wfo import CircuitRow
 
 client = TestClient(app)
 
 
+@pytest.mark.parametrize(
+    ("state", "tab", "expected"),
+    [
+        pytest.param("ACTIVATED", "activated", True, id="activated-in-activated"),
+        pytest.param("FAILED", "activated", False, id="failed-not-in-activated"),
+        pytest.param("TERMINATED", "activated", False, id="terminated-not-in-activated"),
+        pytest.param(None, "activated", True, id="null-state-in-activated"),
+        pytest.param("FAILED", "failed", True, id="failed-in-failed"),
+        pytest.param("failed", "failed", True, id="failed-case-insensitive"),
+        pytest.param("ACTIVATED", "failed", False, id="activated-not-in-failed"),
+        pytest.param("TERMINATED", "terminated", True, id="terminated-in-terminated"),
+        pytest.param("FAILED", "all", True, id="failed-in-all"),
+        pytest.param("ACTIVATED", "all", True, id="activated-in-all"),
+    ],
+)
+def test_in_tab(state, tab, expected):
+    assert _in_tab(CircuitRow(subscription_id="x", state=state), tab) is expected
+
+
 def test_circuits_page_renders():
-    rows = [CircuitRow(subscription_id="sub-1", description="c", state="ACTIVE", created_by="alice")]
+    rows = [CircuitRow(subscription_id="sub-1", description="c", state="ACTIVATED", created_by="alice")]
     with patch("amiss.frontend.circuits.get_circuits", return_value=rows):
         response = client.get("/api/circuits")
     assert response.status_code == 200
     assert "sub-1" in response.text and "alice" in response.text
+
+
+def test_circuits_failed_tab_filters_by_state():
+    rows = [
+        CircuitRow(subscription_id="ok", state="ACTIVATED"),
+        CircuitRow(subscription_id="bad", state="FAILED"),
+    ]
+    with patch("amiss.frontend.circuits.get_circuits", return_value=rows):
+        response = client.get("/api/circuits/failed")
+    assert response.status_code == 200
+    assert "bad" in response.text and "ok" not in response.text
 
 
 def test_circuits_page_shows_error_when_unreachable():

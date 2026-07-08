@@ -31,6 +31,7 @@ from amiss.frontend.util import (
     sort_rows,
     token_from_request,
 )
+from amiss.sources.wfo import CircuitRow
 
 router = APIRouter()
 
@@ -48,17 +49,90 @@ class CircuitSortForm(BaseModel):
     sort: CircuitSort | None = Field(default=None, title="Sort by")
 
 
-@router.get("", response_model=FastUI, response_model_exclude_none=True)
-def circuits(request: Request, sort: str | None = None) -> list[AnyComponent]:
-    """Display all MDP2P circuits, sourced live from the WFO."""
+# (tab key, label, path). The path doubles as the sort form's submit_url so sorting stays in-tab.
+CIRCUIT_TABS = (
+    ("activated", "Activated", "/circuits"),
+    ("failed", "Failed", "/circuits/failed"),
+    ("terminated", "Terminated", "/circuits/terminated"),
+    ("all", "All", "/circuits/all"),
+)
+
+
+def _in_tab(circuit: CircuitRow, tab: str) -> bool:
+    """Whether a circuit belongs in the given tab, matched on the NSI ``vc.state`` (case-insensitive)."""
+    state = (circuit.state or "").upper()
+    match tab:
+        case "failed":
+            return state == "FAILED"
+        case "terminated":
+            return state == "TERMINATED"
+        case "all":
+            return True
+        case _:  # activated: everything that is neither failed nor terminated
+            return state not in ("FAILED", "TERMINATED")
+
+
+def _tabs() -> AnyComponent:
+    # FastUI marks the active tab by matching each link's `active` pattern against the current URL.
+    return c.LinkList(
+        links=[
+            c.Link(
+                components=[c.Text(text=label)],
+                on_click=GoToEvent(url=path),
+                # the base path would prefix-match every tab, so match it exactly
+                active=(path if path == "/circuits" else f"startswith:{path}"),
+            )
+            for _key, label, path in CIRCUIT_TABS
+        ],
+        mode="tabs",
+        class_name="+ mb-4",
+    )
+
+
+def _tab_path(tab: str) -> str:
+    return next(path for key, _label, path in CIRCUIT_TABS if key == tab)
+
+
+def _circuits_view(request: Request, tab: str, sort: str | None) -> list[AnyComponent]:
+    path = _tab_path(tab)
     rows = get_circuits(token_from_request(request))
     if rows is None:
-        return app_page(error_message("Circuits unavailable: the WFO could not be reached."), title="Circuits")
+        return app_page(
+            _tabs(),
+            error_message("Circuits unavailable: the WFO could not be reached."),
+            title="Circuits",
+        )
+    circuits_in_tab = sort_rows([row for row in rows if _in_tab(row, tab)], sort)
     return app_page(
-        sort_form(CircuitSortForm, "/circuits", sort),
-        circuit_table(sort_rows(rows, sort)),
+        _tabs(),
+        sort_form(CircuitSortForm, path, sort),
+        circuit_table(circuits_in_tab),
         title="Circuits",
     )
+
+
+@router.get("", response_model=FastUI, response_model_exclude_none=True)
+def circuits(request: Request, sort: str | None = None) -> list[AnyComponent]:
+    """Circuits that are neither failed nor terminated (default tab)."""
+    return _circuits_view(request, "activated", sort)
+
+
+@router.get("/failed", response_model=FastUI, response_model_exclude_none=True)
+def circuits_failed(request: Request, sort: str | None = None) -> list[AnyComponent]:
+    """Circuits in the FAILED state."""
+    return _circuits_view(request, "failed", sort)
+
+
+@router.get("/terminated", response_model=FastUI, response_model_exclude_none=True)
+def circuits_terminated(request: Request, sort: str | None = None) -> list[AnyComponent]:
+    """Circuits in the TERMINATED state."""
+    return _circuits_view(request, "terminated", sort)
+
+
+@router.get("/all", response_model=FastUI, response_model_exclude_none=True)
+def circuits_all(request: Request, sort: str | None = None) -> list[AnyComponent]:
+    """All circuits regardless of state."""
+    return _circuits_view(request, "all", sort)
 
 
 @router.get("/{subscription_id}/", response_model=FastUI, response_model_exclude_none=True)
