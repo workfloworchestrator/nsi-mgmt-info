@@ -46,6 +46,21 @@ def test_in_tab(state, tab, expected):
     assert _in_tab(CircuitRow(subscription_id="x", state=state), tab) is expected
 
 
+def test_landing_page_injects_brand_style():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "#2a5c5c" in response.text  # brand navbar colour injected before </head>
+
+
+def test_footer_logo_src_points_at_an_existing_file():
+    from pathlib import Path
+
+    from amiss.frontend.util import amiss_logo
+
+    src = amiss_logo().components[0].src
+    assert Path("static", src.rsplit("/", 1)[-1]).is_file()
+
+
 def test_circuits_page_renders():
     rows = [CircuitRow(subscription_id="sub-1", description="c", state="ACTIVATED", created_by="alice")]
     with patch("amiss.frontend.circuits.get_circuits", return_value=rows):

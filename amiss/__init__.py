@@ -82,10 +82,24 @@ async def favicon_ico() -> str:
     return "page not found"
 
 
+# Minimal brand styling to match the ANA portal (ana-automation-ui): teal navbar, light background,
+# system font. Injected into FastUI's prebuilt page, which has no CSS hook of its own.
+_BRAND_STYLE = """
+<style>
+  body { background-color: #f5f7fa;
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .navbar { background-color: #2a5c5c !important; }
+  .navbar .navbar-brand, .navbar .nav-link { color: #ffffff !important; }
+  .navbar .nav-link.active { color: #57e0c4 !important; font-weight: 600; }
+  a, a:hover { color: #2a5c5c; }
+</style>
+"""
+
+
 @app.get("/{path:path}")
 async def html_landing() -> HTMLResponse:
     kwargs: dict = {"title": settings.SITE_TITLE}
     if settings.ROOT_PATH:
         kwargs["api_root_url"] = f"{settings.ROOT_PATH}/api"
         kwargs["api_path_strip"] = settings.ROOT_PATH
-    return HTMLResponse(prebuilt_html(**kwargs))
+    return HTMLResponse(prebuilt_html(**kwargs).replace("</head>", f"{_BRAND_STYLE}</head>"))
