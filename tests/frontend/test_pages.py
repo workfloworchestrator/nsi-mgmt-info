@@ -126,6 +126,14 @@ def test_circuits_failed_tab_filters_by_state():
     assert "bad" in response.text and "ok" not in response.text
 
 
+@pytest.mark.parametrize("path", ["/api/circuits/terminated", "/api/circuits/all"], ids=["terminated", "all"])
+def test_circuit_tab_routes_render(path):
+    with patch(
+        "amiss.frontend.circuits.get_circuits", return_value=[CircuitRow(subscription_id="x", state="TERMINATED")]
+    ):
+        assert client.get(path).status_code == 200
+
+
 def test_circuits_page_shows_error_when_unreachable():
     with patch("amiss.frontend.circuits.get_circuits", return_value=None):
         response = client.get("/api/circuits")
@@ -141,26 +149,59 @@ def test_circuit_detail_renders():
     assert "circuit one" in response.text
 
 
-def test_stp_page_renders_reconciliation():
-    result = StpReconciliation(rows=[StpRow(stp_id="dom:portA", status=ReconcileStatus.IN_BOTH)])
-    with patch("amiss.frontend.stp.get_stps", return_value=result):
-        response = client.get("/api/stp")
+def test_circuit_detail_not_found():
+    with patch("amiss.frontend.circuits.get_circuits", return_value=[]):
+        response = client.get("/api/circuits/does-not-exist/")
     assert response.status_code == 200
-    assert "dom:portA" in response.text
+    assert "No circuit with id" in response.text
 
 
-def test_stp_page_shows_error():
-    with patch("amiss.frontend.stp.get_stps", return_value=StpReconciliation(error="STP source down")):
-        response = client.get("/api/stp")
+def test_dashboard_circuit_card_unavailable_when_wfo_unreachable():
+    with (
+        patch("amiss.frontend.home.get_circuits", return_value=None),
+        patch("amiss.frontend.home.get_stps", return_value=StpReconciliation(rows=[])),
+        patch("amiss.frontend.home.get_sdps", return_value=SdpReconciliation(rows=[])),
+    ):
+        response = client.get("/api/")
     assert response.status_code == 200
-    assert "STP source down" in response.text
+    assert "unavailable" in response.text
 
 
-def test_sdp_page_renders_reconciliation():
-    result = SdpReconciliation(
-        rows=[SdpRow(stp_a_id="dom:portA", stp_z_id="dom:portB", status=ReconcileStatus.DDS_ONLY)]
-    )
-    with patch("amiss.frontend.sdp.get_sdps", return_value=result):
-        response = client.get("/api/sdp")
-    assert response.status_code == 200
-    assert "dom:portA" in response.text
+@pytest.mark.parametrize(
+    ("target", "result", "path", "expected"),
+    [
+        pytest.param(
+            "amiss.frontend.stp.get_stps",
+            StpReconciliation(rows=[StpRow(stp_id="dom:portA", status=ReconcileStatus.IN_BOTH)]),
+            "/api/stp",
+            "dom:portA",
+            id="stp",
+        ),
+        pytest.param(
+            "amiss.frontend.sdp.get_sdps",
+            SdpReconciliation(
+                rows=[SdpRow(stp_a_id="dom:portA", stp_z_id="dom:portB", status=ReconcileStatus.DDS_ONLY)]
+            ),
+            "/api/sdp",
+            "dom:portA",
+            id="sdp",
+        ),
+    ],
+)
+def test_reconciliation_page_renders(target, result, path, expected):
+    with patch(target, return_value=result):
+        response = client.get(path)
+    assert response.status_code == 200 and expected in response.text
+
+
+@pytest.mark.parametrize(
+    ("target", "reconciliation", "path"),
+    [
+        pytest.param("amiss.frontend.stp.get_stps", StpReconciliation(error="STP source down"), "/api/stp", id="stp"),
+        pytest.param("amiss.frontend.sdp.get_sdps", SdpReconciliation(error="SDP source down"), "/api/sdp", id="sdp"),
+    ],
+)
+def test_reconciliation_page_shows_error(target, reconciliation, path):
+    with patch(target, return_value=reconciliation):
+        response = client.get(path)
+    assert response.status_code == 200 and reconciliation.error in response.text

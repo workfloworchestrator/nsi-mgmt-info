@@ -16,6 +16,8 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from amiss import data
 from amiss.sources.reconcile import DdsSdp, DdsStp, ReconcileStatus
 from amiss.sources.wfo import CircuitRow, SdpMember, SdpSub, StpSub
@@ -71,7 +73,14 @@ def test_get_circuits_never_raises_on_source_error():
         assert data.get_circuits("tok") is None
 
 
-def test_get_stps_never_raises_on_source_error():
-    with patch.object(data, "fetch_stp_subscriptions", side_effect=RuntimeError("mTLS misconfig")):
-        result = data.get_stps("tok")
+@pytest.mark.parametrize(
+    ("getter", "fetch_name"),
+    [
+        pytest.param(data.get_stps, "fetch_stp_subscriptions", id="stp"),
+        pytest.param(data.get_sdps, "fetch_sdp_subscriptions", id="sdp"),
+    ],
+)
+def test_reconcile_getter_never_raises_on_source_error(getter, fetch_name):
+    with patch.object(data, fetch_name, side_effect=RuntimeError("mTLS misconfig")):
+        result = getter("tok")
     assert result.error is not None and result.rows == []

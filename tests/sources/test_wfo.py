@@ -196,13 +196,73 @@ class TestQueryWfo:
         assert "Authorization" not in post.call_args.kwargs["headers"]
 
 
-class TestFetch:
-    def test_fetch_circuits_none_on_failure(self):
-        with patch.object(wfo, "query_wfo", return_value=None):
-            assert wfo.fetch_circuits("t") is None
+STP_SUBSCRIPTION = {
+    "subscriptionId": "stp-1",
+    "status": "active",
+    "stp": {"stpId": "urn:ogf:network:port-a", "stpName": "Port A", "capacity": 10000, "labelGroup": "1000-1999"},
+}
 
-    def test_fetch_circuits_maps_page(self):
-        data = {"subscriptions": {"page": [ACTIVE_SUBSCRIPTION], "pageInfo": {"totalItems": 1}}}
+SDP_SUBSCRIPTION = {
+    "subscriptionId": "sdp-1",
+    "status": "active",
+    "sdp": {
+        "sdpName": "A<->B",
+        "stps": [
+            {"stpId": "urn:ogf:network:port-a", "stpName": "Port A", "labelGroup": "1000-1999"},
+            {"stpId": "urn:ogf:network:port-b", "stpName": "Port B", "labelGroup": "1000-1999"},
+        ],
+    },
+}
+
+
+class TestMapStp:
+    def test_maps_fields(self):
+        stp = wfo._map_stp(STP_SUBSCRIPTION)
+        assert (stp.subscription_id, stp.stp_id, stp.stp_name, stp.capacity, stp.label_group, stp.status) == (
+            "stp-1",
+            "urn:ogf:network:port-a",
+            "Port A",
+            10000,
+            "1000-1999",
+            "active",
+        )
+
+    def test_tolerates_missing_block(self):
+        stp = wfo._map_stp({"subscriptionId": "stp-x", "status": "initial"})
+        assert stp.subscription_id == "stp-x" and stp.stp_id is None and stp.status == "initial"
+
+
+class TestMapSdp:
+    def test_maps_name_and_members(self):
+        sdp = wfo._map_sdp(SDP_SUBSCRIPTION)
+        assert sdp.subscription_id == "sdp-1" and sdp.sdp_name == "A<->B"
+        assert [m.stp_id for m in sdp.stps] == ["urn:ogf:network:port-a", "urn:ogf:network:port-b"]
+
+    def test_tolerates_missing_block(self):
+        sdp = wfo._map_sdp({"subscriptionId": "sdp-x", "status": "initial"})
+        assert sdp.stps == [] and sdp.sdp_name is None
+
+
+class TestFetch:
+    @pytest.mark.parametrize(
+        "fetch",
+        [wfo.fetch_circuits, wfo.fetch_stp_subscriptions, wfo.fetch_sdp_subscriptions],
+        ids=["circuits", "stp", "sdp"],
+    )
+    def test_returns_none_on_failure(self, fetch):
+        with patch.object(wfo, "query_wfo", return_value=None):
+            assert fetch("t") is None
+
+    @pytest.mark.parametrize(
+        ("fetch", "subscription", "expected_id"),
+        [
+            pytest.param(wfo.fetch_circuits, ACTIVE_SUBSCRIPTION, "sub-1", id="circuits"),
+            pytest.param(wfo.fetch_stp_subscriptions, STP_SUBSCRIPTION, "stp-1", id="stp"),
+            pytest.param(wfo.fetch_sdp_subscriptions, SDP_SUBSCRIPTION, "sdp-1", id="sdp"),
+        ],
+    )
+    def test_maps_page(self, fetch, subscription, expected_id):
+        data = {"subscriptions": {"page": [subscription], "pageInfo": {"totalItems": 1}}}
         with patch.object(wfo, "query_wfo", return_value=data):
-            rows = wfo.fetch_circuits("t")
-        assert [r.subscription_id for r in rows] == ["sub-1"]
+            rows = fetch("t")
+        assert [r.subscription_id for r in rows] == [expected_id]
