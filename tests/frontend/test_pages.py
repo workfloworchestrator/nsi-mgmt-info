@@ -102,8 +102,9 @@ def test_footer_logo_src_points_at_an_existing_file():
 
     from amiss.frontend.util import amiss_logo
 
-    src = amiss_logo().components[0].src
-    assert Path("static", src.rsplit("/", 1)[-1]).is_file()
+    name = amiss_logo().components[0].src.rsplit("/", 1)[-1]
+    # case-sensitive membership so a wrong-case ref (works on macOS, 404s on Linux) fails locally too
+    assert name in {entry.name for entry in Path("static").iterdir()}
 
 
 def test_circuits_page_renders():
