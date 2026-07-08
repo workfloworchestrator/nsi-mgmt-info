@@ -81,15 +81,15 @@ def amiss_logo() -> AnyComponent:
     return c.Div(
         components=[
             c.Image(
-                src=f"{settings.ROOT_PATH}/static/ana-logo-scaled-ab3.png",
-                alt="ANA footer Logo",
-                width=800,
-                height=58,
+                src=f"{settings.ROOT_PATH}/static/ana-logo-scaled-ab2.png",
+                alt="ANA logo",
+                width=400,
+                height=232,
                 loading="lazy",
                 referrer_policy="no-referrer",
             )
         ],
-        class_name="+ d-flex justify-content-center",
+        class_name="+ d-flex justify-content-center mt-4",
     )
 
 

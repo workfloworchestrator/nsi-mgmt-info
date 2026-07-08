@@ -83,14 +83,15 @@ async def favicon_ico() -> str:
 
 
 # Minimal brand styling to match the ANA portal (ana-automation-ui): teal navbar, light background,
-# system font. Injected into FastUI's prebuilt page, which has no CSS hook of its own.
+# system font. FastUI's prebuilt page has no CSS hook and injects Bootstrap into <head> at runtime,
+# so this is appended at the end of <body> (later in document order) with !important to win the cascade.
 _BRAND_STYLE = """
 <style>
-  body { background-color: #f5f7fa;
-         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-  .navbar { background-color: #2a5c5c !important; }
+  body { background-color: #f5f7fa !important;
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }
+  .navbar { background-color: #2a5c5c !important; border-bottom: none !important; }
   .navbar .navbar-brand, .navbar .nav-link { color: #ffffff !important; }
-  .navbar .nav-link.active { color: #57e0c4 !important; font-weight: 600; }
+  .navbar .nav-link.active { color: #57e0c4 !important; font-weight: 600 !important; }
   a, a:hover { color: #2a5c5c; }
 </style>
 """
@@ -102,4 +103,4 @@ async def html_landing() -> HTMLResponse:
     if settings.ROOT_PATH:
         kwargs["api_root_url"] = f"{settings.ROOT_PATH}/api"
         kwargs["api_path_strip"] = settings.ROOT_PATH
-    return HTMLResponse(prebuilt_html(**kwargs).replace("</head>", f"{_BRAND_STYLE}</head>"))
+    return HTMLResponse(prebuilt_html(**kwargs).replace("</body>", f"{_BRAND_STYLE}</body>"))
