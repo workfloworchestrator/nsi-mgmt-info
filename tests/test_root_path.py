@@ -20,10 +20,24 @@ including FastUI prebuilt_html parameters for the React SPA and that
 image paths, form submit URLs, and search URLs are correctly prefixed.
 """
 
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
 from amiss.settings import Settings
+from amiss.sources.reconcile import SdpReconciliation, StpReconciliation
+
+
+@pytest.fixture(autouse=True)
+def _stub_dashboard_sources():
+    """The landing dashboard fetches WFO/DDS live; stub those so `/` renders without network calls."""
+    with (
+        patch("amiss.frontend.home.get_circuits", return_value=[]),
+        patch("amiss.frontend.home.get_stps", return_value=StpReconciliation(rows=[])),
+        patch("amiss.frontend.home.get_sdps", return_value=SdpReconciliation(rows=[])),
+    ):
+        yield
 
 
 @pytest.fixture()

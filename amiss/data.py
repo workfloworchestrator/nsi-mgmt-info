@@ -33,16 +33,31 @@ if settings.NSI_AMISS_DATABASE_ENABLED:
     logger.warning("NSI_AMISS_DATABASE_ENABLED is set but DB-backed serving is not implemented yet; serving live")
 
 
+# These accessors are the boundary to external systems and back the user-facing pages (incl. the
+# landing dashboard), so they must never raise: any unexpected error degrades to "unavailable"
+# rather than a 500. Expected fetch failures are already turned into None/error upstream.
 def get_circuits(token: str | None) -> list[CircuitRow] | None:
-    """Return the circuit rows, or ``None`` if the WFO could not be reached."""
-    return fetch_circuits(token)
+    """Return the circuit rows, or ``None`` if they could not be fetched."""
+    try:
+        return fetch_circuits(token)
+    except Exception as e:
+        logger.warning("fetching circuits failed", error=str(e))
+        return None
 
 
 def get_stps(token: str | None) -> StpReconciliation:
     """Return the STP rows reconciled between the WFO subscriptions and the DDS topology."""
-    return reconcile_stps(fetch_stp_subscriptions(token), fetch_dds_stps())
+    try:
+        return reconcile_stps(fetch_stp_subscriptions(token), fetch_dds_stps())
+    except Exception as e:
+        logger.warning("STP reconciliation failed", error=str(e))
+        return StpReconciliation(error="STP data unavailable")
 
 
 def get_sdps(token: str | None) -> SdpReconciliation:
     """Return the SDP rows reconciled between the WFO subscriptions and the DDS topology."""
-    return reconcile_sdps(fetch_sdp_subscriptions(token), fetch_dds_sdps())
+    try:
+        return reconcile_sdps(fetch_sdp_subscriptions(token), fetch_dds_sdps())
+    except Exception as e:
+        logger.warning("SDP reconciliation failed", error=str(e))
+        return SdpReconciliation(error="SDP data unavailable")

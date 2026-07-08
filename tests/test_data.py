@@ -64,3 +64,14 @@ def test_get_sdps_reconciles():
         result = data.get_sdps("tok")
     assert result.error is None
     assert [r.status for r in result.rows] == [ReconcileStatus.IN_BOTH]
+
+
+def test_get_circuits_never_raises_on_source_error():
+    with patch.object(data, "fetch_circuits", side_effect=RuntimeError("mTLS misconfig")):
+        assert data.get_circuits("tok") is None
+
+
+def test_get_stps_never_raises_on_source_error():
+    with patch.object(data, "fetch_stp_subscriptions", side_effect=RuntimeError("mTLS misconfig")):
+        result = data.get_stps("tok")
+    assert result.error is not None and result.rows == []
