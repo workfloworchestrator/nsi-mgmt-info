@@ -92,15 +92,19 @@ def amiss_logo() -> AnyComponent:
     )
 
 
+_ACCESS_TOKEN_HEADERS = ("X-Auth-Request-Access-Token", "X-Forwarded-Access-Token")
+
+
 def token_from_request(request: Request) -> str | None:
     """Extract the end-user's OIDC access token to forward to the WFO.
 
-    The portal's oauth2-proxy injects ``X-Forwarded-Access-Token``; a raw ``Authorization: Bearer``
-    header is accepted as a fallback (e.g. local testing with a token).
+    The portal's oauth2-proxy injects ``X-Auth-Request-Access-Token`` (this stack's ``X-Auth-Request-*``
+    convention); ``X-Forwarded-Access-Token`` (oauth2-proxy reverse-proxy mode) and a raw
+    ``Authorization: Bearer`` header are accepted as fallbacks (e.g. local testing with a token).
     """
-    forwarded = request.headers.get("X-Forwarded-Access-Token")
-    if forwarded:
-        return forwarded
+    header_token = next((token for h in _ACCESS_TOKEN_HEADERS if (token := request.headers.get(h))), None)
+    if header_token:
+        return header_token
     authorization = request.headers.get("Authorization", "")
     return authorization[7:] if authorization.lower().startswith("bearer ") else None
 

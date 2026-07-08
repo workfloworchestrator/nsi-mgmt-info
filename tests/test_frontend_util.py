@@ -29,10 +29,15 @@ class _Request:
 @pytest.mark.parametrize(
     ("headers", "expected"),
     [
-        pytest.param({"X-Forwarded-Access-Token": "fwd"}, "fwd", id="oauth2-proxy-header"),
+        pytest.param({"X-Auth-Request-Access-Token": "xar"}, "xar", id="x-auth-request-header"),
+        pytest.param({"X-Forwarded-Access-Token": "fwd"}, "fwd", id="forwarded-header"),
         pytest.param({"Authorization": "Bearer abc"}, "abc", id="bearer-fallback"),
         pytest.param({"Authorization": "bearer abc"}, "abc", id="bearer-case-insensitive"),
-        pytest.param({"X-Forwarded-Access-Token": "fwd", "Authorization": "Bearer abc"}, "fwd", id="forwarded-wins"),
+        pytest.param(
+            {"X-Auth-Request-Access-Token": "xar", "X-Forwarded-Access-Token": "fwd", "Authorization": "Bearer abc"},
+            "xar",
+            id="x-auth-request-wins",
+        ),
         pytest.param({"Authorization": "Basic xyz"}, None, id="non-bearer"),
         pytest.param({}, None, id="no-token"),
     ],
