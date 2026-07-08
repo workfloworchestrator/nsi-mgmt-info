@@ -11,6 +11,13 @@ on:
 
 jobs:
   build:
+    # Same-repo branch pushes already build+publish; on PRs only build the cases with no
+    # push build: forks and the bot branches excluded from the push trigger above.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.fork ||
+      startsWith(github.head_ref, 'dependabot/') ||
+      startsWith(github.head_ref, 'renovate/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
