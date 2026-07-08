@@ -1,6 +1,6 @@
 # nsi-mgmt-info
 
-The NSI Management Information Service offers an interface to obtain information that ANA manangement 
+The NSI Management Information Service (AMISS) offers an interface to obtain information that ANA management 
 needs for decision making. In other words, this service makes available and visualizes data effectively to enable strategic and engineering decision-making processes. The nsi-mgmt-info service uses information from the NSI-Orchestrator and other ANA-NSI 
 components to generate useful overviews and statistics.
   
@@ -23,9 +23,21 @@ ANA Engineering and ANA Planning Groups.
     <img width="50%" src="/artwork/ana-logo-scaled-ab2.png">
 </p>
 
+## What AMISS shows
+
+AMISS is **read-only**: it surfaces and visualizes information sourced live from the ANA-NSI stack and does not create or modify anything (there is no NSI control plane behind it). The **WFO orchestrator** is the source of truth; the **DDS proxy** is used to reconcile the known topology against it. Every page fetches on demand (see `NSI_AMISS_DATABASE_ENABLED` for the optional cache).
+
+- **Dashboard** (landing page): a summary card per area with at-a-glance counts — circuits by state, and STPs/SDPs by reconciliation status — each card linking to its full table.
+- **Circuits** (`/circuits`): the MDP2P point-to-point circuits from the WFO — source/destination STP and VLAN, bandwidth, NSI state, and **who created the circuit** (from the create workflow); the detail view also shows the connection and global-reservation ids. Tabbed by state (**Activated / Failed / Terminated / All**), sortable, with a per-circuit detail page.
+- **Service Termination Points** (`/stp`): the STP subscriptions held by the WFO, reconciled against the DDS topology and flagged **backed by DDS** (in both), **DDS only** (topology present but no subscription yet), or **not in DDS** (a subscription the DDS no longer advertises). Sortable.
+- **Service Demarcation Points** (`/sdp`): the same WFO-vs-DDS reconciliation for the demarcation points that pair two STPs.
+- **Spectrum** (`/spectrum`): per-link VLAN/spectrum usage. Currently sourced from the aggregator proxy and only populated when the database cache is enabled; migration to the WFO is a planned follow-up.
+- **Health** (`/healthcheck`): a liveness/readiness probe returning JSON.
+
 ## Prerequisites
 
-- For mutual-TLS auth to the ANA-NSI proxies (`NSI_PROXY_MTLS_ENABLED=True`): a valid client certificate and private key. Not needed when using header auth (`NSI_PROXY_MTLS_ENABLED=False`).
+- **Standard deployment — behind the ANA portal (recommended).** The portal's oauth2-proxy authenticates the user via OIDC, enforces group membership, and forwards the user's identity and access token (`X-Auth-Request-*`). AMISS forwards that token to the WFO orchestrator on each request, so access is authorised **end-to-end, per user**, and **no client certificate is required**.
+- **Standalone / direct to the ANA-NSI proxies (alternative).** To reach the DDS (and aggregator) proxies without the portal, AMISS authenticates with either mutual TLS (`NSI_PROXY_MTLS_ENABLED=True` plus a client certificate and key) or edge-identity headers (`NSI_PROXY_MTLS_ENABLED=False`) — for local development or when mTLS is terminated at the ingress.
 - Python 3.13+ (for running from source) or Docker.
 
 ## Configuration
@@ -49,7 +61,7 @@ All settings can be configured via environment variables or an `amiss.env` file 
 | `SEED_DUMMY_SEGMENTS_DATA` | `False` | Seed dummy circuits/segments at startup, only when the database is enabled (dev/demo only). |
 | `NSI_AMISS_HOST` | `127.0.0.1` | Interface the server binds to. The container image sets this to `0.0.0.0`. |
 | `NSI_AMISS_PORT` | `8000` | TCP port the server listens on. The container image sets this to `8080`. |
-| `STATIC_DIRECTORY` | `static` | Directory containing static assets (images, templates). |
+| `STATIC_DIRECTORY` | `static` | Directory containing static assets (images). |
 | `SITE_TITLE` | `AMISS` | Title shown in the web UI. |
 | `ROOT_PATH` | _(empty)_ | ASGI root-path prefix when deployed behind a reverse proxy that strips a path prefix. |
 | `SQL_LOGGING` | `False` | Log SQLAlchemy statements. |
@@ -74,6 +86,14 @@ nsi-mgmt-info
 Note that `docker run --env-file` expects plain `KEY=VALUE` lines — no `export` keyword, no quotes around values. The provided `amiss.env` is already in this format.
 
 ## Running the Application
+
+> **Note on authentication.** The WFO-backed views (circuits, STP/SDP, dashboard) authorise
+> **per user**: AMISS forwards the caller's OIDC access token (`X-Auth-Request-Access-Token`, or a
+> plain `Authorization: Bearer`) to the orchestrator. In the standard ANA deployment the portal's
+> oauth2-proxy supplies that token and **no client certificate is needed**. The examples below run
+> AMISS **standalone** and show mutual-TLS auth to the DDS/aggregator proxies; a standalone run must
+> still arrange the WFO token itself, and can set `NSI_PROXY_MTLS_ENABLED=False` to use edge-identity
+> headers for the proxies instead of certificates.
 
 ### From source with uv
 
