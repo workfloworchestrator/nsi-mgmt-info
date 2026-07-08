@@ -37,23 +37,21 @@ from amiss.settings import settings
 log_init()
 
 #
-# dummy data seeding (dev/demo only)
+# database-backed cache (opt-in): seed dummy data and poll upstreams into the DB only when enabled.
+# In the default live mode the tables are served per request from the WFO/DDS (see amiss/data.py).
 #
-if settings.SEED_DUMMY_SEGMENTS_DATA:
-    seed()
-
-#
-# scheduler
-#
-scheduler.start()
-# poll all upstream sources every minute starting on the next whole minute and do not let jobs queue up
-scheduler.add_job(
-    nsi_poll_sources,
-    trigger=IntervalTrigger(
-        minutes=1, start_date=datetime.now(UTC).replace(second=0, microsecond=0) + timedelta(minutes=1)
-    ),
-    coalesce=True,
-)
+if settings.NSI_AMISS_DATABASE_ENABLED:
+    if settings.SEED_DUMMY_SEGMENTS_DATA:
+        seed()
+    scheduler.start()
+    # poll all upstream sources every minute on the next whole minute; do not let jobs queue up
+    scheduler.add_job(
+        nsi_poll_sources,
+        trigger=IntervalTrigger(
+            minutes=1, start_date=datetime.now(UTC).replace(second=0, microsecond=0) + timedelta(minutes=1)
+        ),
+        coalesce=True,
+    )
 
 #
 # application
