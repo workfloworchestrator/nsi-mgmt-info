@@ -12,16 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from enum import Enum
+
 from fastapi import APIRouter
 from fastui import AnyComponent, FastUI
+from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 from amiss.data import get_stps
-from amiss.frontend.util import app_page, error_message, sort_links, sort_rows, stp_table, token_from_request
+from amiss.frontend.util import app_page, error_message, sort_form, sort_rows, stp_table, token_from_request
 
 router = APIRouter()
 
-STP_SORT_FIELDS = ["status", "stp_id", "description", "subscription_id"]
+
+class StpSort(str, Enum):
+    status = "status"
+    stp_id = "stp_id"
+    description = "description"
+    subscription_id = "subscription_id"
+
+
+class StpSortForm(BaseModel):
+    sort: StpSort | None = Field(default=None, title="Sort by")
 
 
 @router.get("", response_model=FastUI, response_model_exclude_none=True)
@@ -31,7 +43,7 @@ def stp(request: Request, sort: str | None = None) -> list[AnyComponent]:
     if result.error:
         return app_page(error_message(result.error), title="Service Termination Points")
     return app_page(
-        sort_links("/stp", STP_SORT_FIELDS, sort),
+        sort_form(StpSortForm, "/stp", sort),
         stp_table(sort_rows(result.rows, sort)),
         title="Service Termination Points",
     )

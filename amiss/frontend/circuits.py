@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from enum import Enum
+
 from fastapi import APIRouter
 from fastui import AnyComponent, FastUI
 from fastui import components as c
 from fastui.events import GoToEvent
+from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 from amiss.data import get_circuits
@@ -24,14 +27,25 @@ from amiss.frontend.util import (
     button_row,
     circuit_table,
     error_message,
-    sort_links,
+    sort_form,
     sort_rows,
     token_from_request,
 )
 
 router = APIRouter()
 
-CIRCUIT_SORT_FIELDS = ["state", "description", "start_time", "source_stp", "dest_stp", "created_by"]
+
+class CircuitSort(str, Enum):
+    state = "state"
+    description = "description"
+    start_time = "start_time"
+    source_stp = "source_stp"
+    dest_stp = "dest_stp"
+    created_by = "created_by"
+
+
+class CircuitSortForm(BaseModel):
+    sort: CircuitSort | None = Field(default=None, title="Sort by")
 
 
 @router.get("", response_model=FastUI, response_model_exclude_none=True)
@@ -41,7 +55,7 @@ def circuits(request: Request, sort: str | None = None) -> list[AnyComponent]:
     if rows is None:
         return app_page(error_message("Circuits unavailable: the WFO could not be reached."), title="Circuits")
     return app_page(
-        sort_links("/circuits", CIRCUIT_SORT_FIELDS, sort),
+        sort_form(CircuitSortForm, "/circuits", sort),
         circuit_table(sort_rows(rows, sort)),
         title="Circuits",
     )

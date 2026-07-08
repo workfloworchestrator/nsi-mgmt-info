@@ -17,6 +17,7 @@ from fastui import AnyComponent
 from fastui import components as c
 from fastui.components.display import DisplayLookup
 from fastui.events import GoToEvent
+from pydantic import BaseModel
 from starlette.requests import Request
 
 from amiss.model import SDP, Segment
@@ -129,21 +130,19 @@ def sort_rows[T](rows: list[T], sort: str | None) -> list[T]:
     return sorted(rows, key=lambda row: _sort_key(row, sort)) if sort else rows
 
 
-def sort_links(base_url: str, fields: list[str], current: str | None) -> AnyComponent:
-    """Build a 'Sort by' row of links; the active field is emphasised."""
-    return c.Div(
-        components=[
-            c.Text(text="Sort by: "),
-            *[
-                c.Link(
-                    components=[c.Text(text=field)],
-                    on_click=GoToEvent(url=f"{base_url}?sort={field}"),
-                    class_name="+ me-3 fw-bold" if field == current else "+ me-3",
-                )
-                for field in fields
-            ],
-        ],
-        class_name="+ mb-3 small",
+def sort_form(form_model: type[BaseModel], submit_url: str, current: str | None) -> AnyComponent:
+    """Build an inline 'Sort by' dropdown that re-sorts the table by navigating to ?sort=<field>.
+
+    ``form_model`` is a one-field pydantic model whose ``sort`` enum lists the table's sortable
+    columns; changing the select navigates to ``submit_url?sort=<field>`` (server-side sort).
+    """
+    return c.ModelForm(
+        model=form_model,
+        submit_url=submit_url,
+        method="GOTO",
+        submit_on_change=True,
+        display_mode="inline",
+        initial={"sort": current} if current else {},
     )
 
 
