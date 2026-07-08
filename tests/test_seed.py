@@ -16,7 +16,7 @@
 
 from unittest.mock import patch
 
-from amiss.model import SDP, STP, Reservation, Segment
+from amiss.model import SDP, STP, Circuit, Segment
 
 
 def _patch_session(db_session):
@@ -49,7 +49,7 @@ class TestSeed:
 
         assert db_session.query(STP).count() == len(DUMMY_STPS)
         assert db_session.query(SDP).count() == len(DUMMY_SDPS)
-        assert db_session.query(Reservation).count() == len(DUMMY_RESERVATIONS)
+        assert db_session.query(Circuit).count() == len(DUMMY_RESERVATIONS)
         assert db_session.query(Segment).count() == len(DUMMY_SEGMENTS)
 
         # isSdpMember reflects SDP membership: the endpoint source STP is not a member.
@@ -57,15 +57,15 @@ class TestSeed:
         assert source_stp.isSdpMember is False
         assert db_session.query(STP).filter(STP.isSdpMember).count() == 4
 
-        # Every segment resolves to a real parent reservation.
-        reservation_ids = {r.id for r in db_session.query(Reservation).all()}
-        assert all(s.reservation_id in reservation_ids for s in db_session.query(Segment).all())
+        # Every segment resolves to a real parent circuit.
+        circuit_ids = {r.id for r in db_session.query(Circuit).all()}
+        assert all(s.circuit_id in circuit_ids for s in db_session.query(Segment).all())
 
-        # Reservations link to real source/dest STPs and to at least one SDP.
-        for reservation in db_session.query(Reservation).all():
-            assert reservation.sourceStp is not None
-            assert reservation.destStp is not None
-            assert len(reservation.sdps) >= 1
+        # Circuits link to real source/dest STPs and to at least one SDP.
+        for circuit in db_session.query(Circuit).all():
+            assert circuit.sourceStp is not None
+            assert circuit.destStp is not None
+            assert len(circuit.sdps) >= 1
 
     def test_segments_resolve_against_sdps_like_spectrum_view(self, db_session):
         """The seeded SDPs must surface the seeded segments the way spectrum_detail does."""
@@ -89,7 +89,7 @@ class TestSeed:
             .one()
         )
 
-        # The MOXY link carries both MOXY reservations (4 segments: vlan 481 + vlan 139, both directions).
+        # The MOXY link carries both MOXY circuits (4 segments: vlan 481 + vlan 139, both directions).
         assert len(_segments_on_sdp(moxy_sdp, segments)) == 4
         # The NEA3R link carries the one NEA3R cross-domain segment.
         assert len(_segments_on_sdp(nea3r_sdp, segments)) == 1
@@ -109,7 +109,7 @@ class TestSeed:
 
         assert db_session.query(STP).count() == len(DUMMY_STPS)
         assert db_session.query(SDP).count() == len(DUMMY_SDPS)
-        assert db_session.query(Reservation).count() == len(DUMMY_RESERVATIONS)
+        assert db_session.query(Circuit).count() == len(DUMMY_RESERVATIONS)
         assert db_session.query(Segment).count() == len(DUMMY_SEGMENTS)
 
 

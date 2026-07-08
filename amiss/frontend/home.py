@@ -29,10 +29,10 @@ to federate and manage the ANA trans-Atlantic links via network automation.
 """
 
 how_to = """
-* [Active Reservations](/reservations/active).
+* [Active Circuits](/circuits/active).
 * [Active Termination Points ](/stp/active).
 * [Active Demarcation Points ](/sdp/active).
-* [Active Reservations per link](/spectrum/active).
+* [Active Circuits per link](/spectrum/active).
 """
 
 

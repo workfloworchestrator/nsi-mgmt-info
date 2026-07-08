@@ -25,7 +25,7 @@ from sqlalchemy import Select, select
 from amiss.db import Session
 from amiss.fsm import ConnectionStateMachine
 from amiss.functional import expand_ranges, to_ranges
-from amiss.model import STP, Reservation
+from amiss.model import STP, Circuit
 
 
 @total_ordering
@@ -264,7 +264,7 @@ def _select_in_use_vlan_ranges(select_statement: Select) -> list[int]:
     """Already in use VLAN ranges on STP identified by stpId."""
     with Session() as session:
         return (
-            session.execute(select_statement.filter(Reservation.state.in_(ConnectionStateMachine.active_state_values)))  # type: ignore
+            session.execute(select_statement.filter(Circuit.state.in_(ConnectionStateMachine.active_state_values)))  # type: ignore
             .scalars()
             .all()
         )
@@ -273,8 +273,8 @@ def _select_in_use_vlan_ranges(select_statement: Select) -> list[int]:
 def in_use_vlan_ranges(stpId: int) -> VlanRanges:
     """Free VLAN ranges on STP identified by stpId."""
     return VlanRanges(
-        _select_in_use_vlan_ranges(select(Reservation.sourceVlan).filter(Reservation.sourceStpId == stpId))  # type: ignore
-        + _select_in_use_vlan_ranges(select(Reservation.destVlan).filter(Reservation.destStpId == stpId))  # type: ignore
+        _select_in_use_vlan_ranges(select(Circuit.sourceVlan).filter(Circuit.sourceStpId == stpId))  # type: ignore
+        + _select_in_use_vlan_ranges(select(Circuit.destVlan).filter(Circuit.destStpId == stpId))  # type: ignore
     )
 
 

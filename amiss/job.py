@@ -20,7 +20,7 @@ from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.schedulers.background import BackgroundScheduler
 from pytz import utc
 
-from amiss.agg import get_aggregator_reservations, temp_pull_reservations_from_agg, update_segments
+from amiss.agg import get_aggregator_circuits, temp_pull_circuits_from_agg, update_segments
 from amiss.db import Session
 from amiss.dds import (
     dds_proxy_json_to_sdps,
@@ -70,35 +70,35 @@ def nsi_poll_dds_job() -> None:
 
 
 def nsi_poll_agg_job() -> None:
-    """Poll the Aggregator for reservations and persist their Segments to the database."""
+    """Poll the Aggregator for circuits and persist their Segments to the database."""
     url = settings.NSI_AGG_PROXY_URL
     log = logger.bind(url=str(url))
     log.info("polling agg proxy")
 
-    jsondata = get_aggregator_reservations(url)
+    jsondata = get_aggregator_circuits(url)
     if jsondata is None:
         # Error already logged
         return
     try:
         jsondict = json.loads(jsondata)
     except (json.JSONDecodeError, ValueError) as e:
-        log.warning("cannot parse reservations JSON document", error=str(e))
+        log.warning("cannot parse circuits JSON document", error=str(e))
         return
-    if "reservations" not in jsondict:
-        log.warning("no reservations in reservations JSON document")
+    if "circuits" not in jsondict:
+        log.warning("no circuits in circuits JSON document")
         return
 
-    temp_pull_reservations_from_agg(jsondict["reservations"])
+    temp_pull_circuits_from_agg(jsondict["circuits"])
 
-    for resdict in jsondict["reservations"]:
+    for resdict in jsondict["circuits"]:
         if "connectionId" in resdict and "segments" in resdict and resdict["segments"] is not None:
             update_segments(resdict["connectionId"], resdict["segments"])
 
 
 def nsi_poll_sources() -> None:
-    """Poll all upstream sources: the DDS proxy (STPs/SDPs) first, then the aggregator (reservations/segments).
+    """Poll all upstream sources: the DDS proxy (STPs/SDPs) first, then the aggregator (circuits/segments).
 
-    Order matters: the aggregator poll's temp_pull_reservations_from_agg resolves reservation STP URNs
+    Order matters: the aggregator poll's temp_pull_circuits_from_agg resolves circuit STP URNs
     against the STP rows the DDS poll just refreshed.
     """
     log = logger.bind(url="about:sources")

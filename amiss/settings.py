@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # creating a file literally named `file::memory:` on disk.
     DATABASE_URI: str = "sqlite:///file::memory:?cache=shared&uri=true"
 
-    # seed dummy parent Reservations and Segments at startup (dev/demo only)
+    # seed dummy parent Circuits and Segments at startup (dev/demo only)
     SEED_DUMMY_SEGMENTS_DATA: bool = False
 
     # directory containing static files, such as images and SOAP templates

@@ -12,22 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for amiss.frontend.util: reservation_buttons (read-only)."""
+"""Tests for amiss.frontend.util: circuit_buttons (read-only)."""
 
 import pytest
 
 
-class TestReservationButtons:
-    """reservation_buttons is read-only now: always just Back + Log, no action buttons."""
+class TestCircuitButtons:
+    """circuit_buttons is read-only now: always just Back + Log, no action buttons."""
 
     @pytest.mark.parametrize(
         "state",
         ["CONNECTION_NEW", "CONNECTION_ACTIVE", "CONNECTION_RESERVE_COMMITTED", "CONNECTION_TERMINATED"],
     )
-    def test_only_back_and_log(self, state, reservation_factory):
-        from amiss.frontend.util import reservation_buttons
+    def test_only_back_and_log(self, state, circuit_factory):
+        from amiss.frontend.util import circuit_buttons
 
-        div = reservation_buttons(reservation_factory(state=state))
+        div = circuit_buttons(circuit_factory(state=state))
 
         button_texts = [component.text for component in div.components if hasattr(component, "text")]
         assert button_texts == ["Back", "Log"]

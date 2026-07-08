@@ -27,43 +27,43 @@ from amiss.db import Session
 from amiss.frontend.util import (
     app_page,
     button_row,
-    reservation_buttons,
-    reservation_header,
-    reservation_table,
-    reservation_tabs,
+    circuit_buttons,
+    circuit_header,
+    circuit_table,
+    circuit_tabs,
 )
 from amiss.fsm import ConnectionStateMachine
-from amiss.model import Log, Reservation
+from amiss.model import Circuit, Log
 
 router = APIRouter()
 
 
 @router.get("", response_model=FastUI, response_model_exclude_none=True)
-async def reservations() -> list[AnyComponent]:
-    """Redirect to active tab of reservations page."""
-    return [c.FireEvent(event=GoToEvent(url="/reservations/active"))]
+async def circuits() -> list[AnyComponent]:
+    """Redirect to active tab of circuits page."""
+    return [c.FireEvent(event=GoToEvent(url="/circuits/active"))]
 
 
 @router.get("/{id}/", response_model=FastUI, response_model_exclude_none=True)
-def reservation_details(id: int) -> list[AnyComponent]:
-    """Display reservation details."""
+def circuit_details(id: int) -> list[AnyComponent]:
+    """Display circuit details."""
     with Session() as session:
-        reservation = session.query(Reservation).filter(Reservation.id == id).one_or_none()  # type: ignore[arg-type]
-    if reservation is None:
-        return app_page(title=f"No reservation with id {id}.")
+        circuit = session.query(Circuit).filter(Circuit.id == id).one_or_none()  # type: ignore[arg-type]
+    if circuit is None:
+        return app_page(title=f"No circuit with id {id}.")
     return app_page(
-        reservation_buttons(reservation),
-        c.Heading(text="Reservation details", level=5),
-        c.Details(data=reservation),
+        circuit_buttons(circuit),
+        c.Heading(text="Circuit details", level=5),
+        c.Details(data=circuit),
         c.Heading(text="SourceStp details", level=5),
-        c.Details(data=reservation.sourceStp),
+        c.Details(data=circuit.sourceStp),
         c.Heading(text="DestStp details", level=5),
-        c.Details(data=reservation.destStp),
-        title=f"Reservation {reservation.description}",
+        c.Details(data=circuit.destStp),
+        title=f"Circuit {circuit.description}",
     )
 
 
-async def reservation_log_stream(id: int) -> AsyncIterable[str]:
+async def circuit_log_stream(id: int) -> AsyncIterable[str]:
     lines = []
     last_timestamp = datetime.fromtimestamp(0)
     while True:
@@ -71,7 +71,7 @@ async def reservation_log_stream(id: int) -> AsyncIterable[str]:
         with Session() as session:
             messages = (
                 session.query(Log.message, Log.timestamp)  # type: ignore[call-overload]
-                .filter(Log.reservation_id == id)
+                .filter(Log.circuit_id == id)
                 .filter(Log.timestamp > last_timestamp)
                 .all()
             )
@@ -83,87 +83,87 @@ async def reservation_log_stream(id: int) -> AsyncIterable[str]:
 
 
 @router.get("/{id}/log/sse")
-async def reservation_log_sse(id: int) -> StreamingResponse:
-    return StreamingResponse(reservation_log_stream(id), media_type="text/event-stream")
+async def circuit_log_sse(id: int) -> StreamingResponse:
+    return StreamingResponse(circuit_log_stream(id), media_type="text/event-stream")
 
 
 @router.get("/{id}/log", response_model=FastUI, response_model_exclude_none=True)
-async def reservation_log(id: int) -> list[AnyComponent]:
-    """Show streaming log for reservation with given id."""
+async def circuit_log(id: int) -> list[AnyComponent]:
+    """Show streaming log for circuit with given id."""
     with Session() as session:
-        reservation = session.query(Reservation).filter(Reservation.id == id).one_or_none()  # type: ignore[arg-type]
-    if reservation is None:
-        return app_page(title=f"No reservation with id {id}.")
+        circuit = session.query(Circuit).filter(Circuit.id == id).one_or_none()  # type: ignore[arg-type]
+    if circuit is None:
+        return app_page(title=f"No circuit with id {id}.")
     return app_page(
         button_row(
             [
                 c.Button(
                     text="Back",
-                    on_click=GoToEvent(url=f"/reservations/{id}/"),
+                    on_click=GoToEvent(url=f"/circuits/{id}/"),
                     class_name="+ ms-2",
                 )
             ]
         ),
-        reservation_header(reservation),
+        circuit_header(circuit),
         c.Div(
             components=[
                 c.ServerLoad(
-                    path=f"/reservations/{id}/log/sse",
+                    path=f"/circuits/{id}/log/sse",
                     sse=True,
                     sse_retry=500,
                 ),
             ],
             class_name="my-2 p-2 border rounded",
         ),
-        title=f"Streaming logs {reservation.description}",
+        title=f"Streaming logs {circuit.description}",
     )
 
 
 @router.get("/all", response_model=FastUI, response_model_exclude_none=True)
-def reservations_all() -> list[AnyComponent]:
-    """Display overview of all reservations."""
+def circuits_all() -> list[AnyComponent]:
+    """Display overview of all circuits."""
     with Session() as session:
-        reservations = session.query(Reservation).order_by(col(Reservation.id)).all()
+        circuits = session.query(Circuit).order_by(col(Circuit.id)).all()
     return app_page(
-        *reservation_tabs(),
-        reservation_table(reservations),
-        title="All reservations",
+        *circuit_tabs(),
+        circuit_table(circuits),
+        title="All circuits",
     )
 
 
 @router.get("/active", response_model=FastUI, response_model_exclude_none=True)
-def reservations_active() -> list[AnyComponent]:
-    """Display overview of active reservations."""
+def circuits_active() -> list[AnyComponent]:
+    """Display overview of active circuits."""
     with Session() as session:
-        reservations = (
-            session.query(Reservation)
-            .filter(Reservation.state == ConnectionStateMachine.ConnectionActive.value)
-            .order_by(col(Reservation.id))
+        circuits = (
+            session.query(Circuit)
+            .filter(Circuit.state == ConnectionStateMachine.ConnectionActive.value)
+            .order_by(col(Circuit.id))
             .all()
         )
     return app_page(
-        *reservation_tabs(),
-        reservation_table(reservations),
-        title="Active reservations",
+        *circuit_tabs(),
+        circuit_table(circuits),
+        title="Active circuits",
     )
 
 
 @router.get("/attention", response_model=FastUI, response_model_exclude_none=True)
-def reservations_attention() -> list[AnyComponent]:
-    """Display overview of reservations that need attention."""
+def circuits_attention() -> list[AnyComponent]:
+    """Display overview of circuits that need attention."""
     with Session() as session:
-        reservations = (
-            session.query(Reservation)
+        circuits = (
+            session.query(Circuit)
             .filter(
-                (Reservation.state != ConnectionStateMachine.ConnectionActive.value)
-                & (Reservation.state != ConnectionStateMachine.ConnectionTerminating.value)
-                & (Reservation.state != ConnectionStateMachine.ConnectionTerminated.value)
+                (Circuit.state != ConnectionStateMachine.ConnectionActive.value)
+                & (Circuit.state != ConnectionStateMachine.ConnectionTerminating.value)
+                & (Circuit.state != ConnectionStateMachine.ConnectionTerminated.value)
             )
-            .order_by(col(Reservation.id))
+            .order_by(col(Circuit.id))
             .all()
         )
     return app_page(
-        *reservation_tabs(),
-        reservation_table(reservations),
-        title="Reservations that need attention",
+        *circuit_tabs(),
+        circuit_table(circuits),
+        title="Circuits that need attention",
     )

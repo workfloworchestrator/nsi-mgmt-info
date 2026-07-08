@@ -72,9 +72,9 @@ class TestNsiPollDdsJob:
 
 
 class TestNsiPollAggJob:
-    @patch("amiss.job.temp_pull_reservations_from_agg")
+    @patch("amiss.job.temp_pull_circuits_from_agg")
     @patch("amiss.job.update_segments")
-    @patch("amiss.job.get_aggregator_reservations")
+    @patch("amiss.job.get_aggregator_circuits")
     def test_returns_early_when_no_data(self, mock_get, mock_update, mock_pull):
         from amiss.job import nsi_poll_agg_job
 
@@ -83,9 +83,9 @@ class TestNsiPollAggJob:
         mock_pull.assert_not_called()
         mock_update.assert_not_called()
 
-    @patch("amiss.job.temp_pull_reservations_from_agg")
+    @patch("amiss.job.temp_pull_circuits_from_agg")
     @patch("amiss.job.update_segments")
-    @patch("amiss.job.get_aggregator_reservations")
+    @patch("amiss.job.get_aggregator_circuits")
     def test_returns_on_invalid_json(self, mock_get, mock_update, mock_pull):
         from amiss.job import nsi_poll_agg_job
 
@@ -94,10 +94,10 @@ class TestNsiPollAggJob:
         mock_pull.assert_not_called()
         mock_update.assert_not_called()
 
-    @patch("amiss.job.temp_pull_reservations_from_agg")
+    @patch("amiss.job.temp_pull_circuits_from_agg")
     @patch("amiss.job.update_segments")
-    @patch("amiss.job.get_aggregator_reservations")
-    def test_returns_when_no_reservations_key(self, mock_get, mock_update, mock_pull):
+    @patch("amiss.job.get_aggregator_circuits")
+    def test_returns_when_no_circuits_key(self, mock_get, mock_update, mock_pull):
         from amiss.job import nsi_poll_agg_job
 
         mock_get.return_value = b'{"other": []}'
@@ -105,14 +105,14 @@ class TestNsiPollAggJob:
         mock_pull.assert_not_called()
         mock_update.assert_not_called()
 
-    @patch("amiss.job.temp_pull_reservations_from_agg")
+    @patch("amiss.job.temp_pull_circuits_from_agg")
     @patch("amiss.job.update_segments")
-    @patch("amiss.job.get_aggregator_reservations")
-    def test_pulls_reservations_then_updates_segments(self, mock_get, mock_update, mock_pull):
+    @patch("amiss.job.get_aggregator_circuits")
+    def test_pulls_circuits_then_updates_segments(self, mock_get, mock_update, mock_pull):
         from amiss.job import nsi_poll_agg_job
 
         mock_get.return_value = (
-            b'{"reservations": ['
+            b'{"circuits": ['
             b'{"connectionId": "c1", "segments": [{"order": 0}]},'
             b'{"connectionId": "c2"},'  # no segments -> skipped by update_segments
             b'{"segments": [{"order": 0}]}'  # no connectionId -> skipped by update_segments
@@ -120,7 +120,7 @@ class TestNsiPollAggJob:
         )
         nsi_poll_agg_job()
 
-        # The full reservations list is pulled into the DB before segment sync.
+        # The full circuits list is pulled into the DB before segment sync.
         mock_pull.assert_called_once_with(
             [
                 {"connectionId": "c1", "segments": [{"order": 0}]},

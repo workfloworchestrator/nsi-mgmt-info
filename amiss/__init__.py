@@ -20,9 +20,9 @@ from fastapi.staticfiles import StaticFiles
 from fastui import prebuilt_html
 from starlette.responses import HTMLResponse, PlainTextResponse
 
+from amiss.frontend.circuits import router as circuits_router
 from amiss.frontend.healthcheck import router as healthcheck_router
 from amiss.frontend.home import router as home_router
-from amiss.frontend.reservations import router as reservations_router
 from amiss.frontend.sdp import router as sdp_router
 from amiss.frontend.spectrum import router as spectrum_router
 from amiss.frontend.stp import router as stp_router
@@ -66,7 +66,7 @@ app.mount("/static", StaticFiles(directory=settings.STATIC_DIRECTORY), name="sta
 
 # include routes
 app.include_router(healthcheck_router)
-app.include_router(reservations_router, prefix="/api/reservations")
+app.include_router(circuits_router, prefix="/api/circuits")
 app.include_router(stp_router, prefix="/api/stp")
 app.include_router(sdp_router, prefix="/api/sdp")
 

@@ -63,8 +63,8 @@ class STP(SQLModel, table=True):
         return f"{self.urn_base}?vlan={self.vlanRange}"
 
 
-class ReservationSDPLink(SQLModel, table=True):
-    reservation_id: int | None = Field(default=None, foreign_key="reservation.id", primary_key=True)
+class CircuitSDPLink(SQLModel, table=True):
+    circuit_id: int | None = Field(default=None, foreign_key="circuit.id", primary_key=True)
     sdp_id: int | None = Field(default=None, foreign_key="sdp.id", primary_key=True)
 
 
@@ -81,10 +81,10 @@ class SDP(SQLModel, table=True):
     stpA: STP = Relationship(sa_relationship_kwargs={"primaryjoin": "SDP.stpAId == STP.id", "lazy": "joined"})
     stpZ: STP = Relationship(sa_relationship_kwargs={"primaryjoin": "SDP.stpZId == STP.id", "lazy": "joined"})
 
-    reservations: list["Reservation"] = Relationship(back_populates="sdps", link_model=ReservationSDPLink)
+    circuits: list["Circuit"] = Relationship(back_populates="sdps", link_model=CircuitSDPLink)
 
 
-class Reservation(SQLModel, table=True):
+class Circuit(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     connectionId: UUID | None
     globalReservationId: UUID
@@ -100,18 +100,16 @@ class Reservation(SQLModel, table=True):
     state: str  # Statemachine default state field name
     # state: str = Field(default=ConnectionStateMachine.ConnectionNew.value) # need to fix circular imports to use this
 
-    sdps: list[SDP] = Relationship(back_populates="reservations", link_model=ReservationSDPLink)
+    sdps: list[SDP] = Relationship(back_populates="circuits", link_model=CircuitSDPLink)
     sourceStp: STP = Relationship(
-        sa_relationship_kwargs={"primaryjoin": "Reservation.sourceStpId == STP.id", "lazy": "joined"}
+        sa_relationship_kwargs={"primaryjoin": "Circuit.sourceStpId == STP.id", "lazy": "joined"}
     )
-    destStp: STP = Relationship(
-        sa_relationship_kwargs={"primaryjoin": "Reservation.destStpId == STP.id", "lazy": "joined"}
-    )
+    destStp: STP = Relationship(sa_relationship_kwargs={"primaryjoin": "Circuit.destStpId == STP.id", "lazy": "joined"})
 
 
 class Log(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    reservation_id: int = Field(foreign_key="reservation.id")
+    circuit_id: int = Field(foreign_key="circuit.id")
     name: str
     module: str
     line: int
@@ -124,8 +122,8 @@ class Log(SQLModel, table=True):
 class Segment(SQLModel, table=True):
     """Segment in an NSI P2P circuit (aggregator-proxy API model).
 
-    Each Segment is a child of a parent NSI reservation (``reservation_id`` references
-    ``Reservation.id``). See
+    Each Segment is a child of a parent NSI circuit (``circuit_id`` references
+    ``Circuit.id``). See
     https://github.com/workfloworchestrator/nsi-aggregator-proxy#query-parameters
     Example aggregator-proxy segment::
 
@@ -141,7 +139,7 @@ class Segment(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     connectionId: str  # child connectionId, used as the upsert key
-    reservation_id: int = Field(foreign_key="reservation.id")
+    circuit_id: int = Field(foreign_key="circuit.id")
     order: int
     providerNSA: str
     serviceType: str

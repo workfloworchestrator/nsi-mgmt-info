@@ -19,7 +19,7 @@ from uuid import UUID, uuid4
 
 from pydantic import HttpUrl
 
-from amiss.model import Reservation, Segment
+from amiss.model import Circuit, Segment
 
 
 def _segdict(
@@ -47,7 +47,7 @@ def _resdict(
     return {
         "globalReservationId": "urn:uuid:5fa943ae-32e8-4faa-9080-0bbdc0f405e8",
         "connectionId": connectionId,
-        "description": "test reservation",
+        "description": "test circuit",
         "criteria": {
             "version": 1,
             "serviceType": "EVTS.A-GOLE",
@@ -70,50 +70,50 @@ def _patch_session(db_session):
     return mock
 
 
-class TestGetAggregatorReservations:
+class TestGetAggregatorCircuits:
     @patch("amiss.agg.nsi_util_get_json")
-    def test_appends_reservations_path_and_detail_full(self, mock_get_json):
-        from amiss.agg import get_aggregator_reservations
+    def test_appends_circuits_path_and_detail_full(self, mock_get_json):
+        from amiss.agg import get_aggregator_circuits
 
-        mock_get_json.return_value = b'{"reservations": []}'
+        mock_get_json.return_value = b'{"circuits": []}'
 
-        result = get_aggregator_reservations(HttpUrl("http://agg.example/aggregator-proxy/"))
+        result = get_aggregator_circuits(HttpUrl("http://agg.example/aggregator-proxy/"))
 
         mock_get_json.assert_called_once()
         called_url, called_params = mock_get_json.call_args.args
-        assert str(called_url) == "http://agg.example/aggregator-proxy/reservations"
+        assert str(called_url) == "http://agg.example/aggregator-proxy/circuits"
         assert called_params == {"detail": "full"}
         # Raw bytes are passed straight through from nsi_util_get_json.
-        assert result == b'{"reservations": []}'
+        assert result == b'{"circuits": []}'
 
     @patch("amiss.agg.nsi_util_get_json")
     def test_handles_base_url_without_trailing_slash(self, mock_get_json):
-        from amiss.agg import get_aggregator_reservations
+        from amiss.agg import get_aggregator_circuits
 
-        get_aggregator_reservations(HttpUrl("http://agg.example/aggregator-proxy"))
+        get_aggregator_circuits(HttpUrl("http://agg.example/aggregator-proxy"))
 
         called_url, _ = mock_get_json.call_args.args
         # No double slash, prefix preserved.
-        assert str(called_url) == "http://agg.example/aggregator-proxy/reservations"
+        assert str(called_url) == "http://agg.example/aggregator-proxy/circuits"
 
     @patch("amiss.agg.nsi_util_get_json")
     def test_returns_none_when_request_fails(self, mock_get_json):
-        from amiss.agg import get_aggregator_reservations
+        from amiss.agg import get_aggregator_circuits
 
         mock_get_json.return_value = None
 
-        assert get_aggregator_reservations(HttpUrl("http://agg.example/")) is None
+        assert get_aggregator_circuits(HttpUrl("http://agg.example/")) is None
 
 
 class TestSegdictsToSegments:
-    def test_builds_segments_with_reservation_id_and_no_id(self):
+    def test_builds_segments_with_circuit_id_and_no_id(self):
         from amiss.agg import segdicts_to_segments
 
         segments = segdicts_to_segments(7, [_segdict(connectionId="a", capacity="500")])
 
         assert len(segments) == 1
         assert segments[0].id is None
-        assert segments[0].reservation_id == 7
+        assert segments[0].circuit_id == 7
         assert segments[0].connectionId == "a"
         assert segments[0].capacity == 500  # coerced from str
 
@@ -129,7 +129,7 @@ class TestSegdictsToSegments:
 
 
 class TestUpdateSegments:
-    def test_skips_when_no_matching_reservation(self, db_session):
+    def test_skips_when_no_matching_circuit(self, db_session):
         from amiss.agg import update_segments
 
         mock = _patch_session(db_session)
@@ -139,10 +139,10 @@ class TestUpdateSegments:
         finally:
             mock.stop()
 
-    def test_inserts_segments_for_resolved_reservation(self, db_session, reservation_factory):
+    def test_inserts_segments_for_resolved_circuit(self, db_session, circuit_factory):
         from amiss.agg import update_segments
 
-        parent = reservation_factory()
+        parent = circuit_factory()
         db_session.add(parent)
         db_session.flush()
 
@@ -154,17 +154,17 @@ class TestUpdateSegments:
 
             stored = db_session.query(Segment).all()
             assert {s.connectionId for s in stored} == {"s1", "s2"}
-            assert all(s.reservation_id == parent.id for s in stored)
+            assert all(s.circuit_id == parent.id for s in stored)
         finally:
             mock.stop()
 
-    def test_updates_changed_fields(self, db_session, reservation_factory, segment_factory):
+    def test_updates_changed_fields(self, db_session, circuit_factory, segment_factory):
         from amiss.agg import update_segments
 
-        parent = reservation_factory()
+        parent = circuit_factory()
         db_session.add(parent)
         db_session.flush()
-        db_session.add(segment_factory(connectionId="s1", reservation_id=parent.id, status="ACTIVATED", capacity=1000))
+        db_session.add(segment_factory(connectionId="s1", circuit_id=parent.id, status="ACTIVATED", capacity=1000))
         db_session.flush()
 
         mock = _patch_session(db_session)
@@ -177,18 +177,16 @@ class TestUpdateSegments:
         finally:
             mock.stop()
 
-    def test_hard_deletes_vanished_segments_scoped_to_reservation(
-        self, db_session, reservation_factory, segment_factory
-    ):
+    def test_hard_deletes_vanished_segments_scoped_to_circuit(self, db_session, circuit_factory, segment_factory):
         from amiss.agg import update_segments
 
-        parent = reservation_factory()
-        other = reservation_factory()
+        parent = circuit_factory()
+        other = circuit_factory()
         db_session.add(parent)
         db_session.add(other)
         db_session.flush()
-        db_session.add(segment_factory(connectionId="gone", reservation_id=parent.id))
-        db_session.add(segment_factory(connectionId="kept-other", reservation_id=other.id))
+        db_session.add(segment_factory(connectionId="gone", circuit_id=parent.id))
+        db_session.add(segment_factory(connectionId="kept-other", circuit_id=other.id))
         db_session.flush()
 
         mock = _patch_session(db_session)
@@ -202,7 +200,7 @@ class TestUpdateSegments:
             mock.stop()
 
 
-class TestTempPullReservationsFromAgg:
+class TestTempPullCircuitsFromAgg:
     def _seed_stps(self, db_session, stp_factory):
         stp_a = stp_factory(stpId="example:2024:topo:ps1", vlanRange="100-200")
         stp_z = stp_factory(stpId="example:2024:topo:ps2", vlanRange="100-200")
@@ -211,47 +209,47 @@ class TestTempPullReservationsFromAgg:
         db_session.flush()
         return stp_a, stp_z
 
-    def test_inserts_reservation_resolving_stps_and_vlans(self, db_session, stp_factory):
-        from amiss.agg import temp_pull_reservations_from_agg
+    def test_inserts_circuit_resolving_stps_and_vlans(self, db_session, stp_factory):
+        from amiss.agg import temp_pull_circuits_from_agg
 
         stp_a, stp_z = self._seed_stps(db_session, stp_factory)
 
         mock = _patch_session(db_session)
         try:
-            temp_pull_reservations_from_agg([_resdict()])
+            temp_pull_circuits_from_agg([_resdict()])
 
-            reservation = db_session.query(Reservation).one()
-            assert reservation.connectionId == UUID("9adfed42-fa58-4d26-bf74-9f5e14ab2281")
-            assert reservation.globalReservationId == UUID("5fa943ae-32e8-4faa-9080-0bbdc0f405e8")
-            assert reservation.sourceStpId == stp_a.id
-            assert reservation.destStpId == stp_z.id
-            assert reservation.sourceVlan == 100
-            assert reservation.destVlan == 200
-            assert reservation.bandwidth == 1000
-            assert reservation.state == "ACTIVATED"
+            circuit = db_session.query(Circuit).one()
+            assert circuit.connectionId == UUID("9adfed42-fa58-4d26-bf74-9f5e14ab2281")
+            assert circuit.globalReservationId == UUID("5fa943ae-32e8-4faa-9080-0bbdc0f405e8")
+            assert circuit.sourceStpId == stp_a.id
+            assert circuit.destStpId == stp_z.id
+            assert circuit.sourceVlan == 100
+            assert circuit.destVlan == 200
+            assert circuit.bandwidth == 1000
+            assert circuit.state == "ACTIVATED"
         finally:
             mock.stop()
 
-    def test_wipes_existing_reservations_and_segments(self, db_session, reservation_factory, segment_factory):
-        from amiss.agg import temp_pull_reservations_from_agg
+    def test_wipes_existing_circuits_and_segments(self, db_session, circuit_factory, segment_factory):
+        from amiss.agg import temp_pull_circuits_from_agg
 
-        old = reservation_factory()
+        old = circuit_factory()
         db_session.add(old)
         db_session.flush()
-        db_session.add(segment_factory(connectionId="old-seg", reservation_id=old.id))
+        db_session.add(segment_factory(connectionId="old-seg", circuit_id=old.id))
         db_session.flush()
 
         mock = _patch_session(db_session)
         try:
-            temp_pull_reservations_from_agg([])  # empty list -> wipe everything, add nothing
+            temp_pull_circuits_from_agg([])  # empty list -> wipe everything, add nothing
 
-            assert db_session.query(Reservation).count() == 0
+            assert db_session.query(Circuit).count() == 0
             assert db_session.query(Segment).count() == 0
         finally:
             mock.stop()
 
-    def test_skips_reservation_with_unknown_stp(self, db_session, stp_factory):
-        from amiss.agg import temp_pull_reservations_from_agg
+    def test_skips_circuit_with_unknown_stp(self, db_session, stp_factory):
+        from amiss.agg import temp_pull_circuits_from_agg
 
         # Only the A-side STP exists; the dest STP is unknown.
         db_session.add(stp_factory(stpId="example:2024:topo:ps1", vlanRange="100-200"))
@@ -259,20 +257,20 @@ class TestTempPullReservationsFromAgg:
 
         mock = _patch_session(db_session)
         try:
-            temp_pull_reservations_from_agg([_resdict()])
-            assert db_session.query(Reservation).count() == 0
+            temp_pull_circuits_from_agg([_resdict()])
+            assert db_session.query(Circuit).count() == 0
         finally:
             mock.stop()
 
-    def test_skips_reservation_with_unparseable_vlan(self, db_session, stp_factory):
-        from amiss.agg import temp_pull_reservations_from_agg
+    def test_skips_circuit_with_unparseable_vlan(self, db_session, stp_factory):
+        from amiss.agg import temp_pull_circuits_from_agg
 
         self._seed_stps(db_session, stp_factory)
 
         mock = _patch_session(db_session)
         try:
-            # sourceSTP has no ?vlan= -> parse fails -> reservation skipped
-            temp_pull_reservations_from_agg([_resdict(sourceSTP="urn:ogf:network:example:2024:topo:ps1")])
-            assert db_session.query(Reservation).count() == 0
+            # sourceSTP has no ?vlan= -> parse fails -> circuit skipped
+            temp_pull_circuits_from_agg([_resdict(sourceSTP="urn:ogf:network:example:2024:topo:ps1")])
+            assert db_session.query(Circuit).count() == 0
         finally:
             mock.stop()

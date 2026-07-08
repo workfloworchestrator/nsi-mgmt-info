@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for amiss.model: STP properties, Reservation validation, and type constraints."""
+"""Tests for amiss.model: STP properties, Circuit validation, and type constraints."""
 
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -20,16 +20,16 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from amiss.model import Reservation, Segment
+from amiss.model import Circuit, Segment
 
 
-def _reservation_data(**overrides):
-    """Return a valid Reservation data dict with optional overrides."""
+def _circuit_data(**overrides):
+    """Return a valid Circuit data dict with optional overrides."""
     defaults = {
         "connectionId": uuid4(),
         "globalReservationId": uuid4(),
         "correlationId": uuid4(),
-        "description": "Test reservation",
+        "description": "Test circuit",
         "startTime": datetime.now(timezone.utc),
         "endTime": datetime.now(timezone.utc),
         "sourceStpId": 1,
@@ -162,7 +162,7 @@ class TestSTPPropertiesWithStrippedStpId:
             _ = stp.organisationId
 
 
-class TestReservationVlanValidation:
+class TestCircuitVlanValidation:
     """SQLModel doesn't enforce Annotated constraints at __init__ time.
 
     Use model_validate to trigger Pydantic validation of Vlan (Ge(2), Le(4094))
@@ -180,13 +180,13 @@ class TestReservationVlanValidation:
         ],
     )
     def test_source_vlan_boundaries(self, vlan, should_pass):
-        data = _reservation_data(sourceVlan=vlan)
+        data = _circuit_data(sourceVlan=vlan)
         if should_pass:
-            reservation = Reservation.model_validate(data)
-            assert reservation.sourceVlan == vlan
+            circuit = Circuit.model_validate(data)
+            assert circuit.sourceVlan == vlan
         else:
             with pytest.raises(ValidationError):
-                Reservation.model_validate(data)
+                Circuit.model_validate(data)
 
     @pytest.mark.parametrize(
         "vlan,should_pass",
@@ -198,13 +198,13 @@ class TestReservationVlanValidation:
         ],
     )
     def test_dest_vlan_boundaries(self, vlan, should_pass):
-        data = _reservation_data(destVlan=vlan)
+        data = _circuit_data(destVlan=vlan)
         if should_pass:
-            reservation = Reservation.model_validate(data)
-            assert reservation.destVlan == vlan
+            circuit = Circuit.model_validate(data)
+            assert circuit.destVlan == vlan
         else:
             with pytest.raises(ValidationError):
-                Reservation.model_validate(data)
+                Circuit.model_validate(data)
 
 
 class TestSegment:
@@ -213,15 +213,15 @@ class TestSegment:
     def test_is_a_table(self):
         assert Segment.__tablename__ == "segment"
 
-    def test_foreign_key_targets_reservation_id(self):
-        fk = next(iter(Segment.__table__.c["reservation_id"].foreign_keys))
-        assert fk.target_fullname == "reservation.id"
+    def test_foreign_key_targets_circuit_id(self):
+        fk = next(iter(Segment.__table__.c["circuit_id"].foreign_keys))
+        assert fk.target_fullname == "circuit.id"
 
     def test_capacity_validated_as_int(self):
         """Table models don't coerce at __init__, but model_validate coerces capacity to int."""
         data = {
             "connectionId": "c",
-            "reservation_id": 1,
+            "circuit_id": 1,
             "order": 0,
             "providerNSA": "p",
             "serviceType": "s",
@@ -244,10 +244,10 @@ class TestSegment:
         stored = db_session.query(Segment).filter(Segment.connectionId == "seg-persist").one()
         assert stored.id is not None
         assert stored.order == 3
-        assert stored.reservation_id == 1
+        assert stored.circuit_id == 1
 
 
-class TestReservationBandwidthValidation:
+class TestCircuitBandwidthValidation:
     @pytest.mark.parametrize(
         "bandwidth,should_pass",
         [
@@ -258,10 +258,10 @@ class TestReservationBandwidthValidation:
         ],
     )
     def test_bandwidth_boundaries(self, bandwidth, should_pass):
-        data = _reservation_data(bandwidth=bandwidth)
+        data = _circuit_data(bandwidth=bandwidth)
         if should_pass:
-            reservation = Reservation.model_validate(data)
-            assert reservation.bandwidth == bandwidth
+            circuit = Circuit.model_validate(data)
+            assert circuit.bandwidth == bandwidth
         else:
             with pytest.raises(ValidationError):
-                Reservation.model_validate(data)
+                Circuit.model_validate(data)

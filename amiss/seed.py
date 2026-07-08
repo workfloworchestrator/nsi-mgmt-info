@@ -15,10 +15,10 @@
 
 Only runs when ``settings.SEED_DUMMY_SEGMENTS_DATA`` is enabled (see ``amiss/__init__.py``); in that
 mode the poll jobs are skipped, so nothing wipes these tables. Seeds a small but self-consistent
-topology: STPs and SDPs (the ANA inter-domain links) plus the parent Reservations and their Segments.
+topology: STPs and SDPs (the ANA inter-domain links) plus the parent Circuits and their Segments.
 The STPs/SDPs are what makes the spectrum view work — ``spectrum_detail`` matches each segment's
 ``sourceStp`` against an SDP's two STPs, so the segments must reference STPs that exist as rows and
-the SDPs must sit on the reservation paths.
+the SDPs must sit on the circuit paths.
 """
 
 from uuid import UUID, uuid4
@@ -28,7 +28,7 @@ from sqlalchemy import or_
 
 from amiss.db import Session
 from amiss.fsm import ConnectionStateMachine
-from amiss.model import SDP, STP, Reservation, Segment
+from amiss.model import SDP, STP, Circuit, Segment
 
 logger = structlog.get_logger(__name__)
 
@@ -65,7 +65,7 @@ DUMMY_STPS: list[dict] = [
     },
 ]
 
-# Dummy SDPs: the ANA inter-domain links the reservations cross (stpA/stpZ given as stpIds).
+# Dummy SDPs: the ANA inter-domain links the circuits cross (stpA/stpZ given as stpIds).
 DUMMY_SDPS: list[dict] = [
     {
         "stpA": "internet2.edu:2025:ana:manlan.moxy-1",
@@ -81,12 +81,12 @@ DUMMY_SDPS: list[dict] = [
     },
 ]
 
-# All dummy reservations share these endpoint STPs.
+# All dummy circuits share these endpoint STPs.
 RESERVATION_SOURCE_STP = "internet2.edu:2025:ana:manlan.ps1"
 RESERVATION_DEST_STP = "surf.nl:2020:ana:netherlight.ps1"
 
-# Parent reservation NSI connectionId (UUID string) -> {description, sdp}. "sdp" is the stpA stpId of
-# the SDP this reservation traverses (used to link Reservation <-> SDP).
+# Parent circuit NSI connectionId (UUID string) -> {description, sdp}. "sdp" is the stpA stpId of
+# the SDP this circuit traverses (used to link Circuit <-> SDP).
 DUMMY_RESERVATIONS: dict[str, dict] = {
     "663EF9C9-34E7-4401-ADD1-E976072B526B": {
         "description": "MOXY multi-domain connection (dummy)",
@@ -102,11 +102,11 @@ DUMMY_RESERVATIONS: dict[str, dict] = {
     },
 }
 
-# Dummy child segments. ``reservation_connectionId`` references a key in DUMMY_RESERVATIONS above.
+# Dummy child segments. ``circuit_connectionId`` references a key in DUMMY_RESERVATIONS above.
 DUMMY_SEGMENTS: list[dict] = [
     {
         "connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C830",
-        "reservation_connectionId": "663EF9C9-34E7-4401-ADD1-E976072B526B",
+        "circuit_connectionId": "663EF9C9-34E7-4401-ADD1-E976072B526B",
         "order": 0,
         "providerNSA": "SupaDuppa",
         "serviceType": "EVTS.A-GOLE",
@@ -117,7 +117,7 @@ DUMMY_SEGMENTS: list[dict] = [
     },
     {
         "connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C831",
-        "reservation_connectionId": "663EF9C9-34E7-4401-ADD1-E976072B526B",
+        "circuit_connectionId": "663EF9C9-34E7-4401-ADD1-E976072B526B",
         "order": 1,
         "providerNSA": "SupaDuppa",
         "serviceType": "EVTS.A-GOLE",
@@ -128,7 +128,7 @@ DUMMY_SEGMENTS: list[dict] = [
     },
     {
         "connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C832",
-        "reservation_connectionId": "663EF9C9-34E7-4401-ADD1-E976072B526B",
+        "circuit_connectionId": "663EF9C9-34E7-4401-ADD1-E976072B526B",
         "order": 2,
         "providerNSA": "SupaDuppa",
         "serviceType": "EVTS.A-GOLE",
@@ -139,7 +139,7 @@ DUMMY_SEGMENTS: list[dict] = [
     },
     {
         "connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C833",
-        "reservation_connectionId": "193E4258-5AC3-4A99-A6C3-440DF9575E0A",
+        "circuit_connectionId": "193E4258-5AC3-4A99-A6C3-440DF9575E0A",
         "order": 0,
         "providerNSA": "SupaDuppa",
         "serviceType": "EVTS.A-GOLE",
@@ -150,7 +150,7 @@ DUMMY_SEGMENTS: list[dict] = [
     },
     {
         "connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C834",
-        "reservation_connectionId": "193E4258-5AC3-4A99-A6C3-440DF9575E0A",
+        "circuit_connectionId": "193E4258-5AC3-4A99-A6C3-440DF9575E0A",
         "order": 1,
         "providerNSA": "SupaDuppa",
         "serviceType": "EVTS.A-GOLE",
@@ -161,7 +161,7 @@ DUMMY_SEGMENTS: list[dict] = [
     },
     {
         "connectionId": "2B20AC13-9246-4060-B2BB-F08D1B08C836",
-        "reservation_connectionId": "193E4258-5AC3-4A99-A6C3-440DF9575E0A",
+        "circuit_connectionId": "193E4258-5AC3-4A99-A6C3-440DF9575E0A",
         "order": 2,
         "providerNSA": "SupaDuppa",
         "serviceType": "EVTS.A-GOLE",
@@ -172,7 +172,7 @@ DUMMY_SEGMENTS: list[dict] = [
     },
     {
         "connectionId": "BA676DA4-F232-45C8-9CF4-079D9D8BE560",
-        "reservation_connectionId": "35A542F5-9657-4EC0-96CE-4DD8A8EB5AB9",
+        "circuit_connectionId": "35A542F5-9657-4EC0-96CE-4DD8A8EB5AB9",
         "order": 0,
         "providerNSA": "SupaDuppa",
         "serviceType": "EVTS.A-GOLE",
@@ -183,7 +183,7 @@ DUMMY_SEGMENTS: list[dict] = [
     },
     {
         "connectionId": "BA676DA4-F232-45C8-9CF4-079D9D8BE561",
-        "reservation_connectionId": "35A542F5-9657-4EC0-96CE-4DD8A8EB5AB9",
+        "circuit_connectionId": "35A542F5-9657-4EC0-96CE-4DD8A8EB5AB9",
         "order": 1,
         "providerNSA": "SupaDuppa",
         "serviceType": "EVTS.A-GOLE",
@@ -196,7 +196,7 @@ DUMMY_SEGMENTS: list[dict] = [
 
 
 def seed() -> None:
-    """Idempotently seed the dummy STPs, SDPs, parent Reservations and their Segments (dev/demo only)."""
+    """Idempotently seed the dummy STPs, SDPs, parent Circuits and their Segments (dev/demo only)."""
     # 1. STPs (keyed by stpId).
     with Session.begin() as session:
         for stp_def in DUMMY_STPS:
@@ -241,23 +241,23 @@ def seed() -> None:
                     )
                 )
 
-    # 3. Reservations (resolve source/dest STP ids and link the SDP they traverse).
+    # 3. Circuits (resolve source/dest STP ids and link the SDP they traverse).
     with Session.begin() as session:
         stp_id_by_stp_id_str = {stp.stpId: stp.id for stp in session.query(STP).all()}
         source_stp_id = stp_id_by_stp_id_str[RESERVATION_SOURCE_STP]
         dest_stp_id = stp_id_by_stp_id_str[RESERVATION_DEST_STP]
         for connection_id_str, info in DUMMY_RESERVATIONS.items():
             connection_id = UUID(connection_id_str)
-            existing_reservation = (
-                session.query(Reservation).filter(Reservation.connectionId == connection_id).one_or_none()  # type: ignore[arg-type]
+            existing_circuit = (
+                session.query(Circuit).filter(Circuit.connectionId == connection_id).one_or_none()  # type: ignore[arg-type]
             )
-            if existing_reservation is None:
+            if existing_circuit is None:
                 linked_sdp = (
                     session.query(SDP).filter(SDP.stpAId == stp_id_by_stp_id_str.get(info["sdp"])).one_or_none()  # type: ignore[arg-type]
                 )
-                logger.info("seed dummy reservation", connectionId=connection_id_str)
+                logger.info("seed dummy circuit", connectionId=connection_id_str)
                 session.add(
-                    Reservation(
+                    Circuit(
                         connectionId=connection_id,
                         globalReservationId=uuid4(),
                         correlationId=uuid4(),
@@ -272,16 +272,16 @@ def seed() -> None:
                     )
                 )
 
-    # 4. Segments (keyed by child connectionId, attached to their parent reservation).
+    # 4. Segments (keyed by child connectionId, attached to their parent circuit).
     with Session.begin() as session:
-        reservation_id_by_connection_id = {
-            str(reservation.connectionId).upper(): reservation.id
-            for reservation in session.query(Reservation).all()
-            if reservation.connectionId is not None
+        circuit_id_by_connection_id = {
+            str(circuit.connectionId).upper(): circuit.id
+            for circuit in session.query(Circuit).all()
+            if circuit.connectionId is not None
         }
         for segment_def in DUMMY_SEGMENTS:
-            reservation_id = reservation_id_by_connection_id.get(segment_def["reservation_connectionId"].upper())
-            if reservation_id is None:  # pragma: no cover - parent is seeded just above
+            circuit_id = circuit_id_by_connection_id.get(segment_def["circuit_connectionId"].upper())
+            if circuit_id is None:  # pragma: no cover - parent is seeded just above
                 continue
             existing_segment = (
                 session.query(Segment).filter(Segment.connectionId == segment_def["connectionId"]).one_or_none()
@@ -291,7 +291,7 @@ def seed() -> None:
                 session.add(
                     Segment(
                         connectionId=segment_def["connectionId"],
-                        reservation_id=reservation_id,
+                        circuit_id=circuit_id,
                         order=segment_def["order"],
                         providerNSA=segment_def["providerNSA"],
                         serviceType=segment_def["serviceType"],

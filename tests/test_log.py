@@ -24,10 +24,10 @@ from amiss.log import DatabaseLogHandler, UvicornAccessLogFilter
 
 class TestDatabaseLogHandler:
     @patch("amiss.log.Session")
-    def test_emit_with_reservationId(self, mock_session_cls):
+    def test_emit_with_circuitId(self, mock_session_cls):
         handler = DatabaseLogHandler()
         record = LogRecord("test", 20, "test.py", 1, None, (), None)
-        record.msg = {"event": "test event", "reservationId": 42}
+        record.msg = {"event": "test event", "circuitId": 42}
 
         mock_session = MagicMock()
         mock_session_cls.begin.return_value.__enter__ = MagicMock(return_value=mock_session)
@@ -59,7 +59,7 @@ class TestDatabaseLogHandler:
         mock_session_cls.begin.return_value.__exit__ = MagicMock(return_value=False)
 
         handler.emit(record)
-        # reservationId is -1, so add should not be called (reservationId < 0)
+        # circuitId is -1, so add should not be called (circuitId < 0)
         mock_session.add.assert_not_called()
 
     @patch("amiss.log.Session")
@@ -118,7 +118,7 @@ class TestDatabaseLogHandler:
         mock_session_cls.begin.return_value.__exit__ = MagicMock(return_value=False)
 
         handler.emit(record)
-        # connectionId == "None" is explicitly skipped, falls through to reservationId = -1
+        # connectionId == "None" is explicitly skipped, falls through to circuitId = -1
         mock_session.add.assert_not_called()
 
     @patch("amiss.log.Session")
@@ -132,7 +132,7 @@ class TestDatabaseLogHandler:
         mock_session_cls.begin.return_value.__enter__ = MagicMock(return_value=mock_session)
         mock_session_cls.begin.return_value.__exit__ = MagicMock(return_value=False)
 
-        # scalar() returns None when no reservation matches the connectionId (e.g. during seeding).
+        # scalar() returns None when no circuit matches the connectionId (e.g. during seeding).
         # The handler must not raise, and must not store the unmatched message.
         handler.emit(record)
         mock_session.add.assert_not_called()
@@ -143,7 +143,7 @@ class TestUvicornAccessLogFilter:
         "args,expected",
         [
             pytest.param(("127.0.0.1", "GET", "/healthcheck"), False, id="healthcheck-filtered"),
-            pytest.param(("127.0.0.1", "GET", "/api/reservations"), True, id="other-endpoint-passes"),
+            pytest.param(("127.0.0.1", "GET", "/api/circuits"), True, id="other-endpoint-passes"),
             pytest.param(None, True, id="none-args-passes"),
             pytest.param(("127.0.0.1",), True, id="short-args-passes"),
             pytest.param((), True, id="empty-tuple-passes"),

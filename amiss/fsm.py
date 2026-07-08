@@ -41,7 +41,7 @@ class AmissStateMachine(StateMachine):
 
 
 class ConnectionStateMachine(AmissStateMachine):
-    """Reservation State Machine.
+    """Circuit State Machine.
 
     .. image:: /images/ConnectionStateMachine.png
     """

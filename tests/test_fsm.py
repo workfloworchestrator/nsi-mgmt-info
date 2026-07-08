@@ -113,11 +113,11 @@ VALID_TRANSITIONS = [
 
 class TestConnectionStateMachineTransitions:
     @pytest.mark.parametrize("event,source_state,target_state", VALID_TRANSITIONS)
-    def test_valid_transition(self, event, source_state, target_state, reservation_factory):
-        reservation = reservation_factory(state=source_state)
-        csm = ConnectionStateMachine(reservation)
+    def test_valid_transition(self, event, source_state, target_state, circuit_factory):
+        circuit = circuit_factory(state=source_state)
+        csm = ConnectionStateMachine(circuit)
         getattr(csm, event)()
-        assert reservation.state == target_state
+        assert circuit.state == target_state
 
     @pytest.mark.parametrize(
         "event,invalid_source_state",
@@ -138,17 +138,17 @@ class TestConnectionStateMachineTransitions:
             pytest.param("gui_delete_connection", "CONNECTION_DELETED", id="delete-from-deleted"),
         ],
     )
-    def test_invalid_transition_raises(self, event, invalid_source_state, reservation_factory):
-        reservation = reservation_factory(state=invalid_source_state)
-        csm = ConnectionStateMachine(reservation)
+    def test_invalid_transition_raises(self, event, invalid_source_state, circuit_factory):
+        circuit = circuit_factory(state=invalid_source_state)
+        csm = ConnectionStateMachine(circuit)
         with pytest.raises(TransitionNotAllowed):
             getattr(csm, event)()
 
 
 class TestConnectionStateMachineProperties:
-    def test_initial_state(self, reservation_factory):
-        reservation = reservation_factory(state="CONNECTION_NEW")
-        csm = ConnectionStateMachine(reservation)
+    def test_initial_state(self, circuit_factory):
+        circuit = circuit_factory(state="CONNECTION_NEW")
+        csm = ConnectionStateMachine(circuit)
         assert csm.ConnectionNew.is_active
 
     def test_final_state_is_deleted(self):
@@ -181,32 +181,32 @@ class TestConnectionStateMachineProperties:
 
 
 class TestConnectionStateMachineFullPath:
-    def test_happy_path_reserve_to_terminate(self, reservation_factory):
-        reservation = reservation_factory(state="CONNECTION_NEW")
-        csm = ConnectionStateMachine(reservation)
+    def test_happy_path_reserve_to_terminate(self, circuit_factory):
+        circuit = circuit_factory(state="CONNECTION_NEW")
+        csm = ConnectionStateMachine(circuit)
         csm.nsi_send_reserve()
-        assert reservation.state == "CONNECTION_RESERVE_CHECKING"
+        assert circuit.state == "CONNECTION_RESERVE_CHECKING"
         csm.nsi_receive_reserve_confirmed()
-        assert reservation.state == "RESERVE_HELD"
+        assert circuit.state == "RESERVE_HELD"
         csm.nsi_send_reserve_commit()
-        assert reservation.state == "CONNECTION_RESERVE_COMMITTING"
+        assert circuit.state == "CONNECTION_RESERVE_COMMITTING"
         csm.nsi_receive_reserve_commit_confirmed()
-        assert reservation.state == "CONNECTION_RESERVE_COMMITTED"
+        assert circuit.state == "CONNECTION_RESERVE_COMMITTED"
         csm.nsi_send_provision()
-        assert reservation.state == "CONNECTION_PROVISIONING"
+        assert circuit.state == "CONNECTION_PROVISIONING"
         csm.nsi_receive_provision_confirmed()
-        assert reservation.state == "CONNECTION_PROVISIONED"
+        assert circuit.state == "CONNECTION_PROVISIONED"
         csm.nsi_receive_data_plane_up()
-        assert reservation.state == "CONNECTION_ACTIVE"
+        assert circuit.state == "CONNECTION_ACTIVE"
         csm.nsi_send_release()
-        assert reservation.state == "CONNECTION_RELEASING"
+        assert circuit.state == "CONNECTION_RELEASING"
         csm.nsi_receive_release_confirmed()
-        assert reservation.state == "CONNECTION_RELEASED"
+        assert circuit.state == "CONNECTION_RELEASED"
         csm.nsi_receive_data_plane_down()
-        assert reservation.state == "CONNECTION_RESERVE_COMMITTED"
+        assert circuit.state == "CONNECTION_RESERVE_COMMITTED"
         csm.nsi_send_terminate()
-        assert reservation.state == "CONNECTION_TERMINATING"
+        assert circuit.state == "CONNECTION_TERMINATING"
         csm.nsi_receive_terminate_confirmed()
-        assert reservation.state == "CONNECTION_TERMINATED"
+        assert circuit.state == "CONNECTION_TERMINATED"
         csm.gui_delete_connection()
-        assert reservation.state == "CONNECTION_DELETED"
+        assert circuit.state == "CONNECTION_DELETED"

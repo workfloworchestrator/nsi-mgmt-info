@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for amiss.wfo: pull_reservations_from_wfo (mocked HTTP)."""
+"""Tests for amiss.wfo: pull_circuits_from_wfo (mocked HTTP)."""
 
 import json
 from unittest.mock import patch
@@ -34,7 +34,7 @@ NOT_AUTHENTICATED = json.dumps(
 ).encode()
 
 
-class TestPullReservationsFromWfo:
+class TestPullCircuitsFromWfo:
     @pytest.mark.parametrize(
         "raw",
         [
@@ -46,25 +46,25 @@ class TestPullReservationsFromWfo:
     )
     @patch("amiss.wfo.nsi_util_get_json")
     def test_returns_none(self, mock_get, raw):
-        from amiss.wfo import pull_reservations_from_wfo
+        from amiss.wfo import pull_circuits_from_wfo
 
         mock_get.return_value = raw
-        assert pull_reservations_from_wfo() is None
+        assert pull_circuits_from_wfo() is None
 
     @patch("amiss.wfo.nsi_util_get_json")
     def test_returns_data_on_success(self, mock_get):
-        from amiss.wfo import pull_reservations_from_wfo
+        from amiss.wfo import pull_circuits_from_wfo
 
         data = {"subscriptions": {"page": [{"subscriptionId": "abc", "description": "node-1", "node": {"name": "n1"}}]}}
         mock_get.return_value = json.dumps({"data": data, "errors": None}).encode()
-        assert pull_reservations_from_wfo() == data
+        assert pull_circuits_from_wfo() == data
 
     @patch("amiss.wfo.nsi_util_get_json")
     def test_builds_escaped_graphql_url_with_empty_queryparams(self, mock_get):
-        from amiss.wfo import pull_reservations_from_wfo
+        from amiss.wfo import pull_circuits_from_wfo
 
         mock_get.return_value = NOT_AUTHENTICATED
-        pull_reservations_from_wfo()
+        pull_circuits_from_wfo()
 
         called_url, called_params = mock_get.call_args.args
         url_str = str(called_url)

@@ -32,7 +32,7 @@ from sqlmodel import Session as SQLModelSession
 from sqlmodel import SQLModel, create_engine
 
 from amiss.log import DatabaseLogHandler
-from amiss.model import SDP, STP, Reservation, Segment
+from amiss.model import SDP, STP, Circuit, Segment
 
 
 def _disable_database_log_handler():
@@ -110,7 +110,7 @@ def segment_factory():
     def _make_segment(**kwargs):
         defaults = {
             "connectionId": "child-seg-0",
-            "reservation_id": 1,
+            "circuit_id": 1,
             "order": 0,
             "providerNSA": "SupaDuppa",
             "serviceType": "EVTS.A-GOLE",
@@ -126,15 +126,15 @@ def segment_factory():
 
 
 @pytest.fixture()
-def reservation_factory():
-    """Factory for creating Reservation instances."""
+def circuit_factory():
+    """Factory for creating Circuit instances."""
 
-    def _make_reservation(**kwargs):
+    def _make_circuit(**kwargs):
         defaults = {
             "connectionId": uuid4(),
             "globalReservationId": uuid4(),
             "correlationId": uuid4(),
-            "description": "Test reservation",
+            "description": "Test circuit",
             "startTime": datetime.now(timezone.utc),
             "endTime": datetime.now(timezone.utc),
             "sourceStpId": 1,
@@ -145,6 +145,6 @@ def reservation_factory():
             "state": "CONNECTION_NEW",
         }
         defaults.update(kwargs)
-        return Reservation(**defaults)
+        return Circuit(**defaults)
 
-    return _make_reservation
+    return _make_circuit

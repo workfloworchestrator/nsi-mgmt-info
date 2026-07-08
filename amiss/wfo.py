@@ -27,7 +27,7 @@ logger = structlog.get_logger(__name__)
 
 # Hard-coded GraphQL query (multi-line for readability / future alteration). It is collapsed to a
 # single line and URL-escaped before being appended to the endpoint as ?query=.
-# TODO: placeholder Node query — replace with the reservation/MDP2P query once defined.
+# TODO: placeholder Node query — replace with the circuit/MDP2P query once defined.
 WFO_RESERVATIONS_QUERY = """{
   subscriptions(filterBy: {field: "type", value: "Node"}) {
     page {
@@ -43,7 +43,7 @@ WFO_RESERVATIONS_QUERY = """{
 }"""
 
 
-def pull_reservations_from_wfo() -> dict | None:
+def pull_circuits_from_wfo() -> dict | None:
     """Query the WFO GraphQL API. Returns the parsed ``data`` on success, or ``None`` on error.
 
     Builds ``<NSI_AMISS_WFO_URL>/api/graphql?query=<single-line, URL-escaped WFO_RESERVATIONS_QUERY>``

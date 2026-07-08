@@ -13,10 +13,10 @@
 # limitations under the License.
 
 # Arno TODO:
-# * Retrieve Spans for all or a given Reservation from Aggregator Proxy, and store in DB
-# * Or: Live Retrieve Spans for all reservations, figure out which reservations use the same spectrum, show in spectrum detail view.
+# * Retrieve Spans for all or a given Circuit from Aggregator Proxy, and store in DB
+# * Or: Live Retrieve Spans for all circuits, figure out which circuits use the same spectrum, show in spectrum detail view.
 #
-# Use https://github.com/workfloworchestrator/nsi-aggregator-proxy#get-reservationsconnectionid
+# Use https://github.com/workfloworchestrator/nsi-aggregator-proxy#get-circuitsconnectionid
 # with the "detail" parameter set to "full".
 #
 # Refactor:
@@ -117,7 +117,7 @@ def spectrum_detail(id: int) -> list[AnyComponent]:
         ),
         c.Heading(text="SDP details", level=4),
         c.Details(data=sdp),
-        c.Heading(text="Reservations on this link", level=4),
+        c.Heading(text="Circuits on this link", level=4),
         segtable,
         title=f"SDP {sdp.description}",
     )

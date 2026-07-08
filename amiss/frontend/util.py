@@ -16,7 +16,7 @@ from fastui import components as c
 from fastui.components.display import DisplayLookup
 from fastui.events import GoToEvent
 
-from amiss.model import SDP, STP, Reservation, Segment
+from amiss.model import SDP, STP, Circuit, Segment
 from amiss.settings import settings
 
 # do not know why, but otherwise FastUI will complain
@@ -31,9 +31,9 @@ def app_page(*components: AnyComponent, title: str | None = None) -> list[AnyCom
             title_event=GoToEvent(url="/"),
             start_links=[
                 c.Link(
-                    components=[c.Text(text="Reservations")],
-                    on_click=GoToEvent(url="/reservations/active"),
-                    active="startswith:/reservations",
+                    components=[c.Text(text="Circuits")],
+                    on_click=GoToEvent(url="/circuits/active"),
+                    active="startswith:/circuits",
                 ),
                 c.Link(
                     components=[c.Text(text="STP")],
@@ -98,12 +98,12 @@ def amiss_logo() -> AnyComponent:
     )
 
 
-def reservation_table(reservations: list[Reservation]) -> c.Table:
+def circuit_table(circuits: list[Circuit]) -> c.Table:
     return c.Table(
-        data_model=Reservation,
-        data=reservations,
+        data_model=Circuit,
+        data=circuits,
         columns=[
-            DisplayLookup(field="id", on_click=GoToEvent(url="/reservations/{id}/")),
+            DisplayLookup(field="id", on_click=GoToEvent(url="/circuits/{id}/")),
             DisplayLookup(field="description"),
             DisplayLookup(field="startTime"),
             DisplayLookup(field="endTime"),
@@ -171,7 +171,7 @@ def segment_table(segments: list[Segment]) -> c.Table:
         data=segments,
         columns=[
             DisplayLookup(field="id", on_click=GoToEvent(url="/segment/{id}/")),  # ARNOTODO
-            DisplayLookup(field="reservation_id"),
+            DisplayLookup(field="circuit_id"),
             DisplayLookup(field="order"),
             DisplayLookup(field="sourceStp"),
             DisplayLookup(field="destStp"),
@@ -181,24 +181,24 @@ def segment_table(segments: list[Segment]) -> c.Table:
     )
 
 
-def reservation_tabs() -> list[AnyComponent]:
+def circuit_tabs() -> list[AnyComponent]:
     return [
         c.LinkList(
             links=[
                 c.Link(
                     components=[c.Text(text="Active")],
-                    on_click=GoToEvent(url="/reservations/active"),
-                    active="startswith:/reservations/active",
+                    on_click=GoToEvent(url="/circuits/active"),
+                    active="startswith:/circuits/active",
                 ),
                 c.Link(
                     components=[c.Text(text="Attention")],
-                    on_click=GoToEvent(url="/reservations/attention"),
-                    active="startswith:/reservations/attention",
+                    on_click=GoToEvent(url="/circuits/attention"),
+                    active="startswith:/circuits/attention",
                 ),
                 c.Link(
                     components=[c.Text(text="All")],
-                    on_click=GoToEvent(url="/reservations/all"),
-                    active="startswith:/reservations/all",
+                    on_click=GoToEvent(url="/circuits/all"),
+                    active="startswith:/circuits/all",
                 ),
             ],
             mode="tabs",
@@ -207,7 +207,7 @@ def reservation_tabs() -> list[AnyComponent]:
     ]
 
 
-def reservation_header(reservation: Reservation) -> c.Div:
+def circuit_header(circuit: Circuit) -> c.Div:
     return c.Div(
         class_name="+ container fw-bold fs-6",
         components=[
@@ -215,21 +215,21 @@ def reservation_header(reservation: Reservation) -> c.Div:
                 class_name="+ row",
                 components=[
                     c.Div(class_name="+ col-md-2", components=[c.Text(text="Id:")]),
-                    c.Div(class_name="+ col-md-10", components=[c.Text(text=str(reservation.id))]),
+                    c.Div(class_name="+ col-md-10", components=[c.Text(text=str(circuit.id))]),
                 ],
             ),
             c.Div(
                 class_name="+ row",
                 components=[
                     c.Div(class_name="+ col-md-2", components=[c.Text(text="Description:")]),
-                    c.Div(class_name="+ col-md-10", components=[c.Text(text=reservation.description)]),
+                    c.Div(class_name="+ col-md-10", components=[c.Text(text=circuit.description)]),
                 ],
             ),
             c.Div(
                 class_name="+ row",
                 components=[
                     c.Div(class_name="+ col-md-2", components=[c.Text(text="Connection ID:")]),
-                    c.Div(class_name="+ col-md-10", components=[c.Text(text=str(reservation.connectionId))]),
+                    c.Div(class_name="+ col-md-10", components=[c.Text(text=str(circuit.connectionId))]),
                 ],
             ),
             # add some margin at bottom size 3
@@ -243,17 +243,17 @@ def button_row(buttons: list[c.Button]) -> c.Div:
     return c.Div(components=buttons, class_name="d-flex flex-row gap-1 py-3")
 
 
-def reservation_buttons(reservation: Reservation) -> c.Div:
+def circuit_buttons(circuit: Circuit) -> c.Div:
     return button_row(
         [
             c.Button(
                 text="Back",
-                on_click=GoToEvent(url="/reservations"),
+                on_click=GoToEvent(url="/circuits"),
                 class_name="+ ms-2",
             ),
             c.Button(
                 text="Log",
-                on_click=GoToEvent(url=f"/reservations/{reservation.id}/log"),
+                on_click=GoToEvent(url=f"/circuits/{circuit.id}/log"),
                 class_name="+ ms-2",
             ),
         ]

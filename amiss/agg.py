@@ -20,7 +20,7 @@ from sqlalchemy import delete
 
 from amiss.db import Session
 from amiss.dds import strip_urn
-from amiss.model import STP, Reservation, ReservationSDPLink, Segment
+from amiss.model import STP, Circuit, CircuitSDPLink, Segment
 from amiss.nsi import nsi_util_get_json
 
 logger = structlog.get_logger(__name__)
@@ -57,28 +57,28 @@ logger = structlog.get_logger(__name__)
 """
 
 
-def get_aggregator_reservations(proxy_url: HttpUrl) -> bytes | None:
-    """Fetch all reservations with full segment detail from the aggregator proxy.
+def get_aggregator_circuits(proxy_url: HttpUrl) -> bytes | None:
+    """Fetch all circuits with full segment detail from the aggregator proxy.
 
-    Calls the aggregator proxy's ``GET /reservations`` endpoint with ``detail=full`` so the
-    returned reservations include their path ``segments``. ``proxy_url`` is the proxy base URL
-    (e.g. ``settings.NSI_AGG_PROXY_URL``); the ``/reservations`` path is appended to it.
+    Calls the aggregator proxy's ``GET /circuits`` endpoint with ``detail=full`` so the
+    returned circuits include their path ``segments``. ``proxy_url`` is the proxy base URL
+    (e.g. ``settings.NSI_AGG_PROXY_URL``); the ``/circuits`` path is appended to it.
 
     Returns the raw JSON response body as bytes, or ``None`` if the request failed
     (the underlying ``nsi_util_get_json`` already logs the reason).
     """
-    reservations_url = HttpUrl(f"{str(proxy_url).rstrip('/')}/reservations")
+    circuits_url = HttpUrl(f"{str(proxy_url).rstrip('/')}/circuits")
     queryparams = {"detail": "full"}
-    return nsi_util_get_json(reservations_url, queryparams)
+    return nsi_util_get_json(circuits_url, queryparams)
 
 
-def segdicts_to_segments(reservation_id: int, segdicts: list) -> list[Segment]:
-    """Parse the aggregator-proxy ``segdicts`` of a parent reservation into ``Segment`` objects.
+def segdicts_to_segments(circuit_id: int, segdicts: list) -> list[Segment]:
+    """Parse the aggregator-proxy ``segdicts`` of a parent circuit into ``Segment`` objects.
 
-    ``reservation_id`` is the parent ``Reservation.id`` these segments belong to; it is stored on
+    ``circuit_id`` is the parent ``Circuit.id`` these segments belong to; it is stored on
     each Segment as the foreign key. The returned Segments are transient (no ``id`` assigned yet).
     """
-    log = logger.bind(reservation_id=reservation_id)
+    log = logger.bind(circuit_id=circuit_id)
 
     segments = []
 
@@ -93,13 +93,13 @@ def segdicts_to_segments(reservation_id: int, segdicts: list) -> list[Segment]:
             destStpUrn = segdict["destSTP"]
             status = segdict["status"]
         except KeyError as e:
-            log.warning("cannot parse reservation JSON", error=f"cannot find {e!s} in reservation JSON")
+            log.warning("cannot parse circuit JSON", error=f"cannot find {e!s} in circuit JSON")
             continue
 
         segments.append(
             Segment(
                 connectionId=childConnectionId,
-                reservation_id=reservation_id,
+                circuit_id=circuit_id,
                 order=order,
                 providerNSA=providerNSA,
                 serviceType=serviceType,
@@ -114,33 +114,33 @@ def segdicts_to_segments(reservation_id: int, segdicts: list) -> list[Segment]:
 
 
 def update_segments(parentConnectionId: str, segdicts: list) -> None:
-    """Persist the segments of the parent reservation identified by ``parentConnectionId``.
+    """Persist the segments of the parent circuit identified by ``parentConnectionId``.
 
-    Resolves ``parentConnectionId`` (an NSI connection id) to its ``Reservation``, then upserts the
+    Resolves ``parentConnectionId`` (an NSI connection id) to its ``Circuit``, then upserts the
     parsed segments keyed by their child ``connectionId`` and hard-deletes any previously-stored
-    segments of that reservation that are no longer reported. Segments whose parent reservation is
+    segments of that circuit that are no longer reported. Segments whose parent circuit is
     not (yet) in the database are skipped with a warning.
     """
     log = logger.bind(parentConnectionId=parentConnectionId)
     with Session.begin() as session:
-        reservation = (
-            session.query(Reservation).filter(Reservation.connectionId == UUID(parentConnectionId)).one_or_none()  # type: ignore[arg-type]
+        circuit = (
+            session.query(Circuit).filter(Circuit.connectionId == UUID(parentConnectionId)).one_or_none()  # type: ignore[arg-type]
         )
-        if reservation is None:
-            log.warning("no reservation for connectionId, skipping segments")
+        if circuit is None:
+            log.warning("no circuit for connectionId, skipping segments")
             return
-        reservation_id = reservation.id
-        if reservation_id is None:  # pragma: no cover - a persisted reservation always has an id
+        circuit_id = circuit.id
+        if circuit_id is None:  # pragma: no cover - a persisted circuit always has an id
             return
 
-        new_segments = segdicts_to_segments(reservation_id, segdicts)
+        new_segments = segdicts_to_segments(circuit_id, segdicts)
         new_connection_ids = [segment.connectionId for segment in new_segments]
 
         for new_segment in new_segments:
             existing = (
                 session.query(Segment)
                 .filter(
-                    Segment.reservation_id == reservation_id,  # type: ignore[arg-type]
+                    Segment.circuit_id == circuit_id,  # type: ignore[arg-type]
                     Segment.connectionId == new_segment.connectionId,  # type: ignore[arg-type]
                 )
                 .one_or_none()
@@ -149,7 +149,7 @@ def update_segments(parentConnectionId: str, segdicts: list) -> None:
                 log.info("add new Segment", connectionId=new_segment.connectionId)
                 session.add(new_segment)
             elif (
-                existing.reservation_id != new_segment.reservation_id
+                existing.circuit_id != new_segment.circuit_id
                 or existing.order != new_segment.order
                 or existing.providerNSA != new_segment.providerNSA
                 or existing.serviceType != new_segment.serviceType
@@ -159,7 +159,7 @@ def update_segments(parentConnectionId: str, segdicts: list) -> None:
                 or existing.status != new_segment.status
             ):
                 log.info("update existing Segment", connectionId=new_segment.connectionId)
-                existing.reservation_id = new_segment.reservation_id
+                existing.circuit_id = new_segment.circuit_id
                 existing.order = new_segment.order
                 existing.providerNSA = new_segment.providerNSA
                 existing.serviceType = new_segment.serviceType
@@ -170,10 +170,10 @@ def update_segments(parentConnectionId: str, segdicts: list) -> None:
             else:
                 log.debug("Segment did not change", connectionId=new_segment.connectionId)
 
-        # Hard-delete segments of this reservation that are no longer reported.
+        # Hard-delete segments of this circuit that are no longer reported.
         session.execute(
             delete(Segment).where(
-                Segment.reservation_id == reservation_id,  # type: ignore[arg-type]
+                Segment.circuit_id == circuit_id,  # type: ignore[arg-type]
                 Segment.connectionId.not_in(new_connection_ids),  # type: ignore[attr-defined]
             )
         )
@@ -190,23 +190,23 @@ def _parse_stp_urn(urn: str) -> tuple[str, int]:
     return stpId, vlan
 
 
-def temp_pull_reservations_from_agg(reservations: list) -> None:
-    """TEMP: replace all reservations in the DB with those reported by the aggregator proxy.
+def temp_pull_circuits_from_agg(circuits: list) -> None:
+    """TEMP: replace all circuits in the DB with those reported by the aggregator proxy.
 
-    This is a temporary solution. Reservations should instead be pulled from the WFO (workflow
-    orchestrator, ``settings.NSI_AMISS_WFO_URL``), which is the Source of Truth for reservations;
+    This is a temporary solution. Circuits should instead be pulled from the WFO (workflow
+    orchestrator, ``settings.NSI_AMISS_WFO_URL``), which is the Source of Truth for circuits;
     the aggregator proxy is only used here as a stopgap source.
 
-    Wipes Segment, ReservationSDPLink and Reservation, then inserts a Reservation per aggregator
-    reservation. Source/dest STP URNs are resolved to STP rows for the int FKs and the VLAN comes
-    from the URN's ?vlan=; a reservation is skipped (with a warning) if either STP is unknown or the
+    Wipes Segment, CircuitSDPLink and Circuit, then inserts a Circuit per aggregator
+    circuit. Source/dest STP URNs are resolved to STP rows for the int FKs and the VLAN comes
+    from the URN's ?vlan=; a circuit is skipped (with a warning) if either STP is unknown or the
     data can't be parsed. Segments are repopulated afterwards by update_segments.
     """
     with Session.begin() as session:
         session.execute(delete(Segment))
-        session.execute(delete(ReservationSDPLink))
-        session.execute(delete(Reservation))
-        for resdict in reservations:
+        session.execute(delete(CircuitSDPLink))
+        session.execute(delete(Circuit))
+        for resdict in circuits:
             log = logger.bind(connectionId=resdict.get("connectionId"))
             try:
                 connection_id = UUID(resdict["connectionId"])
@@ -218,15 +218,15 @@ def temp_pull_reservations_from_agg(reservations: list) -> None:
                 dest_stp_id, dest_vlan = _parse_stp_urn(p2ps["destSTP"])
                 status = resdict["status"]
             except (KeyError, ValueError, IndexError, AttributeError) as e:
-                log.warning("cannot parse aggregator reservation, skipping", error=str(e))
+                log.warning("cannot parse aggregator circuit, skipping", error=str(e))
                 continue
             source_stp = session.query(STP).filter(STP.stpId == source_stp_id).one_or_none()  # type: ignore[arg-type]
             dest_stp = session.query(STP).filter(STP.stpId == dest_stp_id).one_or_none()  # type: ignore[arg-type]
             if source_stp is None or dest_stp is None:
-                log.warning("STP not found, skipping reservation", sourceStp=source_stp_id, destStp=dest_stp_id)
+                log.warning("STP not found, skipping circuit", sourceStp=source_stp_id, destStp=dest_stp_id)
                 continue
             session.add(
-                Reservation(
+                Circuit(
                     connectionId=connection_id,
                     globalReservationId=global_reservation_id,
                     correlationId=uuid4(),
@@ -239,4 +239,4 @@ def temp_pull_reservations_from_agg(reservations: list) -> None:
                     state=status,
                 )
             )
-            log.info("added reservation from aggregator")
+            log.info("added circuit from aggregator")
