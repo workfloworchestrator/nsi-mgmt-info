@@ -115,6 +115,17 @@ class SdpSub(BaseModel):
     stps: list[SdpMember] = []
 
 
+def circuit_state_bucket(state: str | None) -> str:
+    """Classify a circuit's NSI ``vc.state`` into a tab/dashboard bucket (case-insensitive)."""
+    match (state or "").upper():
+        case "FAILED":
+            return "failed"
+        case "TERMINATED":
+            return "terminated"
+        case _:
+            return "activated"
+
+
 def query_wfo(query: str, token: str | None) -> dict | None:
     """POST a GraphQL query to the WFO, forwarding ``token`` as a Bearer credential.
 

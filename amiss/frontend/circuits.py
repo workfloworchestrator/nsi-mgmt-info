@@ -31,7 +31,7 @@ from amiss.frontend.util import (
     sort_rows,
     token_from_request,
 )
-from amiss.sources.wfo import CircuitRow
+from amiss.sources.wfo import CircuitRow, circuit_state_bucket
 
 router = APIRouter()
 
@@ -59,17 +59,8 @@ CIRCUIT_TABS = (
 
 
 def _in_tab(circuit: CircuitRow, tab: str) -> bool:
-    """Whether a circuit belongs in the given tab, matched on the NSI ``vc.state`` (case-insensitive)."""
-    state = (circuit.state or "").upper()
-    match tab:
-        case "failed":
-            return state == "FAILED"
-        case "terminated":
-            return state == "TERMINATED"
-        case "all":
-            return True
-        case _:  # activated: everything that is neither failed nor terminated
-            return state not in ("FAILED", "TERMINATED")
+    """Whether a circuit belongs in the given tab (the 'all' tab holds everything)."""
+    return tab == "all" or circuit_state_bucket(circuit.state) == tab
 
 
 def _tabs() -> AnyComponent:

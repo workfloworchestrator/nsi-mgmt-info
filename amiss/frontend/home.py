@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
 
 from fastapi import APIRouter
@@ -24,7 +25,7 @@ from starlette.requests import Request
 from amiss.data import get_circuits, get_sdps, get_stps
 from amiss.frontend.util import app_page, token_from_request
 from amiss.sources.reconcile import ReconcileStatus, SdpReconciliation, StpReconciliation
-from amiss.sources.wfo import CircuitRow
+from amiss.sources.wfo import CircuitRow, circuit_state_bucket
 
 router = APIRouter()
 
@@ -84,12 +85,11 @@ def _card(
 def _circuit_card(circuits: list[CircuitRow] | None) -> AnyComponent:
     if circuits is None:
         return _card("Circuits", "/circuits", None, [], unavailable=True)
-    states = [(circuit.state or "").upper() for circuit in circuits]
-    failed, terminated = states.count("FAILED"), states.count("TERMINATED")
+    buckets = Counter(circuit_state_bucket(circuit.state) for circuit in circuits)
     lines = [
-        ("Activated", len(states) - failed - terminated, Tone.GOOD),
-        ("Failed", failed, Tone.BAD),
-        ("Terminated", terminated, Tone.NEUTRAL),
+        ("Activated", buckets["activated"], Tone.GOOD),
+        ("Failed", buckets["failed"], Tone.BAD),
+        ("Terminated", buckets["terminated"], Tone.NEUTRAL),
     ]
     return _card("Circuits", "/circuits", len(circuits), lines, unavailable=False)
 
@@ -125,12 +125,20 @@ def _link_card(title: str, url: str, subtitle: str) -> AnyComponent:
 
 @router.get("/", response_model=FastUI, response_model_exclude_none=True)
 def home(request: Request) -> list[AnyComponent]:
-    """Dashboard: a summary card per section, each linking to its tab; sources fetched live."""
+    """Dashboard: a summary card per section, each linking to its tab; sources fetched live.
+
+    The three source fetches are independent and each does blocking HTTP, so they run concurrently
+    (wall-clock = the slowest one, not the sum); the accessors never raise, so results collect safely.
+    """
     token = token_from_request(request)
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        circuits = pool.submit(get_circuits, token)
+        stps = pool.submit(get_stps, token)
+        sdps = pool.submit(get_sdps, token)
     cards = [
-        _circuit_card(get_circuits(token)),
-        _reconcile_card("Termination Points", "/stp", get_stps(token)),
-        _reconcile_card("Demarcation Points", "/sdp", get_sdps(token)),
+        _circuit_card(circuits.result()),
+        _reconcile_card("Termination Points", "/stp", stps.result()),
+        _reconcile_card("Demarcation Points", "/sdp", sdps.result()),
         _link_card("Spectrum", "/spectrum/active", "Active circuits per link"),
     ]
     dashboard = c.Div(
