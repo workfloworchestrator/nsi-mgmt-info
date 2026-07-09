@@ -210,3 +210,17 @@ class TestRootPathNavUrls:
     def test_nav_urls_with_root_path(self, app_with_root_path):
         urls = self._internal_urls(TestClient(app_with_root_path).get("/api/"))
         assert urls and all(url.startswith("/amiss/") for url in urls)
+
+
+class TestAuthReloadScript:
+    """The SPA shell injects auth-reload.js (re-login on expired session) with the ROOT_PATH prefix."""
+
+    def test_injected_without_root_path(self, test_app):
+        assert '<script src="/static/auth-reload.js">' in TestClient(test_app).get("/").text
+
+    def test_injected_with_root_path(self, app_with_root_path):
+        assert '<script src="/amiss/static/auth-reload.js">' in TestClient(app_with_root_path).get("/").text
+
+    def test_script_is_served(self, test_app):
+        resp = TestClient(test_app).get("/static/auth-reload.js")
+        assert resp.status_code == 200 and "window.fetch" in resp.text

@@ -97,4 +97,7 @@ async def html_landing() -> HTMLResponse:
     if settings.ROOT_PATH:
         kwargs["api_root_url"] = f"{settings.ROOT_PATH}/api"
         kwargs["api_path_strip"] = settings.ROOT_PATH
-    return HTMLResponse(prebuilt_html(**kwargs).replace("</body>", f"{_BRAND_STYLE}</body>"))
+    # auth-reload.js wraps window.fetch to full-page-reload on an expired-session redirect (re-login);
+    # plain (non-deferred) script so it wraps fetch before the FastUI bundle's first post-mount call.
+    tail = f'{_BRAND_STYLE}<script src="{settings.ROOT_PATH}/static/auth-reload.js"></script></body>'
+    return HTMLResponse(prebuilt_html(**kwargs).replace("</body>", tail))
