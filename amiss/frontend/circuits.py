@@ -27,6 +27,7 @@ from amiss.frontend.util import (
     button_row,
     circuit_table,
     error_message,
+    root_url,
     segment_table,
     sort_form,
     sort_rows,
@@ -71,9 +72,9 @@ def _tabs() -> AnyComponent:
         links=[
             c.Link(
                 components=[c.Text(text=label)],
-                on_click=GoToEvent(url=path),
+                on_click=GoToEvent(url=root_url(path)),
                 # the base path would prefix-match every tab, so match it exactly
-                active=(path if path == "/circuits" else f"startswith:{path}"),
+                active=(root_url(path) if path == "/circuits" else f"startswith:{root_url(path)}"),
             )
             for _key, label, path in CIRCUIT_TABS
         ],
@@ -98,7 +99,7 @@ def _circuits_view(request: Request, tab: str, sort: str | None) -> list[AnyComp
     circuits_in_tab = sort_rows([row for row in rows if _in_tab(row, tab)], sort)
     return app_page(
         _tabs(),
-        sort_form(CircuitSortForm, path, sort),
+        sort_form(CircuitSortForm, root_url(path), sort),
         circuit_table(circuits_in_tab),
         title="Circuits",
     )
@@ -146,7 +147,7 @@ def circuit_details(request: Request, subscription_id: str) -> list[AnyComponent
         return app_page(title=f"No circuit with id {subscription_id}.")
     path = get_circuit_path(circuit.connection_id) if circuit.connection_id else []
     return app_page(
-        button_row([c.Button(text="Back", on_click=GoToEvent(url="/circuits"), class_name="+ ms-2")]),
+        button_row([c.Button(text="Back", on_click=GoToEvent(url=root_url("/circuits")), class_name="+ ms-2")]),
         c.Details(data=circuit),
         c.Heading(text="Path", level=4),
         _path_section(path),

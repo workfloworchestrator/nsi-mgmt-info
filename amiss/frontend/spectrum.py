@@ -28,6 +28,7 @@ from amiss.frontend.util import (
     app_page,
     button_row,
     error_message,
+    root_url,
     sort_form,
     sort_rows,
     spectrum_circuit_table,
@@ -58,7 +59,7 @@ def spectrum(request: Request, sort: str | None = None) -> list[AnyComponent]:
     if view.error:
         return app_page(error_message(_UNAVAILABLE), title="Spectrum")
     return app_page(
-        sort_form(SpectrumSortForm, "/spectrum", sort),
+        sort_form(SpectrumSortForm, root_url("/spectrum"), sort),
         spectrum_sdp_table(sort_rows(view.rows, sort)),
         title="Spectrum",
     )
@@ -75,7 +76,7 @@ def spectrum_detail(request: Request, subscription_id: str) -> list[AnyComponent
         return app_page(title=f"No SDP with id {subscription_id}.")
     heading = f"{sdp.stp_a} <-> {sdp.stp_z}" if sdp.stp_a else (sdp.sdp_name or "")
     return app_page(
-        button_row([c.Button(text="Back", on_click=GoToEvent(url="/spectrum"), class_name="+ ms-2")]),
+        button_row([c.Button(text="Back", on_click=GoToEvent(url=root_url("/spectrum")), class_name="+ ms-2")]),
         c.Heading(text=heading, level=4),
         spectrum_circuit_table(sdp.circuits),
         title=f"SDP {sdp.sdp_name}",

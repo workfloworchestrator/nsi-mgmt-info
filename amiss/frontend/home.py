@@ -25,7 +25,7 @@ from fastui import components as c
 from fastui.events import GoToEvent
 from starlette.requests import Request
 
-from amiss.frontend.util import app_page, token_from_request
+from amiss.frontend.util import app_page, root_url, token_from_request
 from amiss.sources.aggregator import UNATTRIBUTED_ID, SpectrumView, build_spectrum, fetch_agg_circuits
 from amiss.sources.dds_topology import fetch_dds_sdps, fetch_dds_stps
 from amiss.sources.reconcile import (
@@ -106,7 +106,7 @@ def _card(
         body.extend(_stat_line(label, count, tone) for label, count, tone in lines)
     return c.Link(
         components=[c.Div(components=body, class_name="+ card-body")],
-        on_click=GoToEvent(url=url),
+        on_click=GoToEvent(url=root_url(url)),
         class_name=_CARD_CLASS,
     )
 

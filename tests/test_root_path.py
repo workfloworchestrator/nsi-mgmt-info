@@ -193,3 +193,20 @@ class TestRootPathImageUrls:
         assert len(static_srcs) > 0
         for src in static_srcs:
             assert src.startswith("/amiss/static/")
+
+
+class TestRootPathNavUrls:
+    """Navbar/card GoToEvent urls must carry ROOT_PATH, else FastUI navigation drops the prefix."""
+
+    @staticmethod
+    def _internal_urls(resp):
+        # GoToEvent urls that stay in-app (skip the external GitHub footer link)
+        return [url for url in find_values(resp.json(), "url") if url.startswith("/")]
+
+    def test_nav_urls_without_root_path(self, test_app):
+        urls = self._internal_urls(TestClient(test_app).get("/api/"))
+        assert urls and all(not url.startswith("/amiss") for url in urls)
+
+    def test_nav_urls_with_root_path(self, app_with_root_path):
+        urls = self._internal_urls(TestClient(app_with_root_path).get("/api/"))
+        assert urls and all(url.startswith("/amiss/") for url in urls)

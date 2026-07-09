@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 from amiss.data import get_sdps
-from amiss.frontend.util import app_page, error_message, sdp_table, sort_form, sort_rows, token_from_request
+from amiss.frontend.util import app_page, error_message, root_url, sdp_table, sort_form, sort_rows, token_from_request
 
 router = APIRouter()
 
@@ -44,7 +44,7 @@ def sdp(request: Request, sort: str | None = None) -> list[AnyComponent]:
     if result.error:
         return app_page(error_message(result.error), title="Service Demarcation Points")
     return app_page(
-        sort_form(SdpSortForm, "/sdp", sort),
+        sort_form(SdpSortForm, root_url("/sdp"), sort),
         sdp_table(sort_rows(result.rows, sort)),
         title="Service Demarcation Points",
     )

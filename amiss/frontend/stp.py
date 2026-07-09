@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 from amiss.data import get_stps
-from amiss.frontend.util import app_page, error_message, sort_form, sort_rows, stp_table, token_from_request
+from amiss.frontend.util import app_page, error_message, root_url, sort_form, sort_rows, stp_table, token_from_request
 
 router = APIRouter()
 
@@ -43,7 +43,7 @@ def stp(request: Request, sort: str | None = None) -> list[AnyComponent]:
     if result.error:
         return app_page(error_message(result.error), title="Service Termination Points")
     return app_page(
-        sort_form(StpSortForm, "/stp", sort),
+        sort_form(StpSortForm, root_url("/stp"), sort),
         stp_table(sort_rows(result.rows, sort)),
         title="Service Termination Points",
     )

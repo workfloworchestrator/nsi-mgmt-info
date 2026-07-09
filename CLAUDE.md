@@ -54,10 +54,17 @@ When deployed behind a reverse-proxy portal, the app is served at path prefix `/
 
 **Do NOT set `FastAPI(root_path=...)`**. Starlette's `get_route_path()` assumes `scope["path"]` contains `root_path` as a prefix. When the proxy already stripped the prefix, this causes StaticFiles to double-count the mount path (looking up `static/static/file.png`), resulting in 404s.
 
-Instead, `settings.ROOT_PATH` is used only for URL prefixing in templates and forms:
+Instead, `settings.ROOT_PATH` is applied explicitly to every URL the frontend emits, via the
+`root_url(path)` helper in `amiss/frontend/util.py`. FastUI's `api_path_strip` expects the browser
+path to **keep** the prefix (it strips it only for the API fetch), so a bare `GoToEvent(url="/x")`
+would navigate the browser to `/x` and drop the `/amiss`. Everything internal must be prefixed:
 - `prebuilt_html(api_root_url=..., api_path_strip=...)` in the catch-all route
-- Image `src` attributes via `amiss/frontend/util.py`
-- Table sort and detail URLs in `amiss/frontend/circuits.py`
+- every `GoToEvent(url=...)` (navbar title + links, dashboard cards, tabs, table row/detail links,
+  Back buttons) and each navbar/tab `active` matcher
+- `sort_form` `submit_url`s and image `src` attributes
+
+`root_url` is a no-op when `ROOT_PATH` is empty (local/dev). External links (e.g. the GitHub footer)
+are left absolute.
 
 ## Testing
 

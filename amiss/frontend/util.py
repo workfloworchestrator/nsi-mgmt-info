@@ -29,32 +29,43 @@ from amiss.sources.wfo import CircuitRow
 c.Link.model_rebuild()
 
 
+def root_url(path: str) -> str:
+    """Prefix an internal SPA path with ``ROOT_PATH``.
+
+    FastUI's ``api_path_strip`` expects the browser path to keep the deploy prefix (e.g. ``/amiss``);
+    it strips it only for the API call. So every internal navigation URL, ``active`` matcher and form
+    ``submit_url`` must carry the prefix, or navigation drops it from the browser URL. No-op when
+    ``ROOT_PATH`` is empty (local/dev).
+    """
+    return f"{settings.ROOT_PATH}{path}"
+
+
 def app_page(*components: AnyComponent, title: str | None = None) -> list[AnyComponent]:
     return [
         c.PageTitle(text=f"AMISS — {title}" if title else "AMISS"),
         c.Navbar(
             title=settings.SITE_TITLE,
-            title_event=GoToEvent(url="/"),
+            title_event=GoToEvent(url=root_url("/")),
             start_links=[
                 c.Link(
                     components=[c.Text(text="Circuits")],
-                    on_click=GoToEvent(url="/circuits"),
-                    active="startswith:/circuits",
+                    on_click=GoToEvent(url=root_url("/circuits")),
+                    active=f"startswith:{root_url('/circuits')}",
                 ),
                 c.Link(
                     components=[c.Text(text="STP")],
-                    on_click=GoToEvent(url="/stp"),
-                    active="startswith:/stp",
+                    on_click=GoToEvent(url=root_url("/stp")),
+                    active=f"startswith:{root_url('/stp')}",
                 ),
                 c.Link(
                     components=[c.Text(text="SDP")],
-                    on_click=GoToEvent(url="/sdp"),
-                    active="startswith:/sdp",
+                    on_click=GoToEvent(url=root_url("/sdp")),
+                    active=f"startswith:{root_url('/sdp')}",
                 ),
                 c.Link(
                     components=[c.Text(text="Spectrum")],
-                    on_click=GoToEvent(url="/spectrum"),
-                    active="startswith:/spectrum",
+                    on_click=GoToEvent(url=root_url("/spectrum")),
+                    active=f"startswith:{root_url('/spectrum')}",
                 ),
             ],
         ),
@@ -81,7 +92,7 @@ def amiss_logo() -> AnyComponent:
     return c.Div(
         components=[
             c.Image(
-                src=f"{settings.ROOT_PATH}/static/ana-logo-scaled-ab2.png",
+                src=root_url("/static/ana-logo-scaled-ab2.png"),
                 alt="ANA logo",
                 width=400,
                 height=232,
@@ -151,7 +162,7 @@ def circuit_table(circuits: list[CircuitRow]) -> c.Table:
         data_model=CircuitRow,
         data=circuits,
         columns=[
-            DisplayLookup(field="subscription_id", on_click=GoToEvent(url="/circuits/{subscription_id}/")),
+            DisplayLookup(field="subscription_id", on_click=GoToEvent(url=root_url("/circuits/{subscription_id}/"))),
             DisplayLookup(field="description"),
             DisplayLookup(field="start_time"),
             DisplayLookup(field="end_time"),
@@ -203,7 +214,9 @@ def spectrum_sdp_table(rows: list[SpectrumRow]) -> c.Table:
         data_model=SpectrumRow,
         data=rows,
         columns=[
-            DisplayLookup(field="sdp_name", title="SDP", on_click=GoToEvent(url="/spectrum/{subscription_id}/")),
+            DisplayLookup(
+                field="sdp_name", title="SDP", on_click=GoToEvent(url=root_url("/spectrum/{subscription_id}/"))
+            ),
             DisplayLookup(field="stp_a"),
             DisplayLookup(field="stp_z"),
             DisplayLookup(field="circuit_count", title="Circuits"),
@@ -218,7 +231,7 @@ def spectrum_circuit_table(circuits: list[CircuitOnSdp]) -> c.Table:
         data_model=CircuitOnSdp,
         data=circuits,
         columns=[
-            DisplayLookup(field="description", on_click=GoToEvent(url="/circuits/{subscription_id}/")),
+            DisplayLookup(field="description", on_click=GoToEvent(url=root_url("/circuits/{subscription_id}/"))),
             DisplayLookup(field="connection_id"),
             DisplayLookup(field="vlan"),
             DisplayLookup(field="capacity"),
