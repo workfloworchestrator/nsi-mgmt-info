@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from datetime import UTC, datetime, timedelta
+import time
+from collections.abc import Awaitable, Callable
 
-from apscheduler.triggers.interval import IntervalTrigger
+import structlog
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastui import prebuilt_html
-from starlette.responses import HTMLResponse, PlainTextResponse
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, PlainTextResponse, Response
 
 from amiss.frontend.circuits import router as circuits_router
 from amiss.frontend.healthcheck import router as healthcheck_router
@@ -26,32 +28,14 @@ from amiss.frontend.home import router as home_router
 from amiss.frontend.sdp import router as sdp_router
 from amiss.frontend.spectrum import router as spectrum_router
 from amiss.frontend.stp import router as stp_router
-from amiss.job import nsi_poll_sources, scheduler
 from amiss.log import init as log_init
-from amiss.seed import seed
 from amiss.settings import settings
 
 #
 # logging
 #
 log_init()
-
-#
-# database-backed cache (opt-in): seed dummy data and poll upstreams into the DB only when enabled.
-# In the default live mode the tables are served per request from the WFO/DDS (see amiss/data.py).
-#
-if settings.NSI_AMISS_DATABASE_ENABLED:
-    if settings.SEED_DUMMY_SEGMENTS_DATA:
-        seed()
-    scheduler.start()
-    # poll all upstream sources every minute on the next whole minute; do not let jobs queue up
-    scheduler.add_job(
-        nsi_poll_sources,
-        trigger=IntervalTrigger(
-            minutes=1, start_date=datetime.now(UTC).replace(second=0, microsecond=0) + timedelta(minutes=1)
-        ),
-        coalesce=True,
-    )
+logger = structlog.get_logger(__name__)
 
 #
 # application
@@ -61,6 +45,16 @@ app = FastAPI()
 # make sure the folder named 'static' exists in the project,
 # and put the css and js files inside a subfolder called 'assets'
 app.mount("/static", StaticFiles(directory=settings.STATIC_DIRECTORY), name="static")
+
+
+@app.middleware("http")
+async def log_request_time(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    """Log wall-clock time per request (DEBUG) so page build latency is visible when profiling."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    logger.debug("request", path=request.url.path, elapsed_ms=round((time.perf_counter() - start) * 1000, 1))
+    return response
+
 
 # include routes
 app.include_router(healthcheck_router)

@@ -25,7 +25,7 @@ ANA Engineering and ANA Planning Groups.
 
 ## What AMISS shows
 
-AMISS is **read-only**: it surfaces and visualizes information sourced live from the ANA-NSI stack and does not create or modify anything (there is no NSI control plane behind it). The **WFO orchestrator** is the source of truth; the **DDS proxy** is used to reconcile the known topology against it. Every page fetches on demand (see `NSI_AMISS_DATABASE_ENABLED` for the optional cache).
+AMISS is **read-only**: it surfaces and visualizes information sourced live from the ANA-NSI stack and does not create or modify anything (there is no NSI control plane behind it). The **WFO orchestrator** is the source of truth; the **DDS proxy** is used to reconcile the known topology against it. Every page fetches on demand — there is no database or cache.
 
 - **Dashboard** (landing page): a summary card per area with at-a-glance counts — circuits by state, and STPs/SDPs by reconciliation status — each card linking to its full table.
 - **Circuits** (`/circuits`): the MDP2P point-to-point circuits from the WFO — source/destination STP and VLAN, bandwidth, NSI state, and **who created the circuit** (from the create workflow); the detail view also shows the connection and global-reservation ids plus the circuit's multi-domain **path** (the aggregator's per-segment provider-NSA, STPs, capacity, and status). Tabbed by state (**Activated / Failed / Terminated / All**), sortable, with a per-circuit detail page.
@@ -33,6 +33,30 @@ AMISS is **read-only**: it surfaces and visualizes information sourced live from
 - **Service Demarcation Points** (`/sdp`): the same WFO-vs-DDS reconciliation for the demarcation points that pair two STPs.
 - **Spectrum** (`/spectrum`): the **SDPs** (each the inter-domain link between two topologies) and the circuits crossing each, showing per-SDP circuit count and total capacity. The SDP inventory comes from the WFO SDP subscriptions; the paths come from the **aggregator proxy** (`GET /reservations?detail=full`), the only source of a circuit's multi-domain segments. Only circuits with a **non-terminated WFO subscription** are shown (matched by connection id), so `/spectrum` stays consistent with `/circuits`; each circuit's details (description, capacity, state) come from the **WFO** — only the per-SDP VLAN comes from the aggregator path. A drill-in lists the circuits on an SDP (each linking to its circuit detail/path); multi-domain circuits not matching a known SDP are grouped under **Unattributed circuits**.
 - **Health** (`/healthcheck`): a liveness/readiness probe returning JSON.
+
+## Performance
+
+Every page fetches live per request (no cache). A page's accessor issues one or more upstream calls —
+WFO GraphQL, DDS proxy, aggregator proxy — and independent calls run **concurrently**, so a page's
+wall-clock is roughly the *slowest single upstream*, not the sum. The dashboard composes all its cards
+from one concurrent fetch per upstream (each fetched once), so it is about as fast as the slowest one.
+
+The dominant cost is a **fixed ~400–500 ms per WFO GraphQL request**, largely independent of the query
+or result size (responses are a few KB and JSON parsing is negligible). That points at per-request work
+at the orchestrator — most likely **OIDC token validation on every request** (the forwarded access
+token is introspected/validated at the WFO) plus GraphQL/DB setup — so a single WFO round-trip is the
+practical per-page floor. Set `LOG_LEVEL=DEBUG` to see per-request `elapsed_ms` timings.
+
+Directions to improve, largest first:
+
+- **Orchestrator-side (biggest win):** cache token introspection / validation at the WFO so each
+  GraphQL request no longer pays the full auth cost. This speeds up **every** page across the stack and
+  is the only way under the one-round-trip floor. Out of scope for this repo.
+- **Batch the dashboard's WFO queries:** issue the circuits/STP/SDP subscription queries as a single
+  aliased GraphQL request instead of three, trading three WFO round-trips for one (also helps
+  `/spectrum`, which makes two). Cannot beat the single-round-trip floor.
+- A response cache would hide the latency but adds staleness; the orchestrator is the source of truth,
+  so the token-validation fix above is preferred.
 
 ## Prerequisites
 
@@ -56,15 +80,11 @@ All settings can be configured via environment variables or an `amiss.env` file 
 | `NSI_AMISS_PRIVATE_KEY` | _(unset)_ | Path to the PEM private key for the client certificate. Required only when `NSI_PROXY_MTLS_ENABLED=True`. |
 | `CA_CERTIFICATES` | _(unset)_ | Path to a PEM file or a `c_rehash` directory of CA certificates used to verify the proxies. When unset, the default requests CA bundle is used. |
 | `VERIFY_REQUESTS` | `True` | Verify TLS certificates on outbound requests. Only disable for debugging. |
-| `NSI_AMISS_DATABASE_ENABLED` | `False` | When `False` (default) the tables are served live from the WFO/DDS per request and no polling runs. When `True` the scheduler polls upstreams into the database — an opt-in cache for when live querying proves too slow (the WFO-backed poller is a follow-up). |
-| `DATABASE_URI` | `sqlite:///file::memory:?cache=shared&uri=true` | SQLModel database URI, used only when `NSI_AMISS_DATABASE_ENABLED=True`. Defaults to ephemeral shared in-memory SQLite; use a file path or PostgreSQL URI to persist. |
-| `SEED_DUMMY_SEGMENTS_DATA` | `False` | Seed dummy circuits/segments at startup, only when the database is enabled (dev/demo only). |
 | `NSI_AMISS_HOST` | `127.0.0.1` | Interface the server binds to. The container image sets this to `0.0.0.0`. |
 | `NSI_AMISS_PORT` | `8000` | TCP port the server listens on. The container image sets this to `8080`. |
 | `STATIC_DIRECTORY` | `static` | Directory containing static assets (images). |
 | `SITE_TITLE` | `AMISS` | Title shown in the web UI. |
 | `ROOT_PATH` | _(empty)_ | ASGI root-path prefix when deployed behind a reverse proxy that strips a path prefix. |
-| `SQL_LOGGING` | `False` | Log SQLAlchemy statements. |
 | `LOG_LEVEL` | `INFO` | Logging verbosity. Accepted values: `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
 
 A ready-to-use template is provided in `amiss.env`. The application automatically reads this file from the working directory when it starts, so in most cases you only need to edit it in place.

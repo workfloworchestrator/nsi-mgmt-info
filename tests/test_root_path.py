@@ -20,25 +20,30 @@ including FastUI prebuilt_html parameters for the React SPA and that
 image paths, form submit URLs, and search URLs are correctly prefixed.
 """
 
+from contextlib import ExitStack
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from amiss.settings import Settings
-from amiss.sources.aggregator import SpectrumView
-from amiss.sources.reconcile import SdpReconciliation, StpReconciliation
+
+_DASHBOARD_FETCHES = (
+    "fetch_circuits",
+    "fetch_stp_subscriptions",
+    "fetch_sdp_subscriptions",
+    "fetch_dds_stps",
+    "fetch_dds_sdps",
+    "fetch_agg_circuits",
+)
 
 
 @pytest.fixture(autouse=True)
 def _stub_dashboard_sources():
     """The landing dashboard fetches WFO/DDS/aggregator live; stub those so `/` renders without network calls."""
-    with (
-        patch("amiss.frontend.home.get_circuits", return_value=[]),
-        patch("amiss.frontend.home.get_stps", return_value=StpReconciliation(rows=[])),
-        patch("amiss.frontend.home.get_sdps", return_value=SdpReconciliation(rows=[])),
-        patch("amiss.frontend.home.get_spectrum", return_value=SpectrumView(rows=[])),
-    ):
+    with ExitStack() as stack:
+        for fetch in _DASHBOARD_FETCHES:
+            stack.enter_context(patch(f"amiss.frontend.home.{fetch}", return_value=[]))
         yield
 
 

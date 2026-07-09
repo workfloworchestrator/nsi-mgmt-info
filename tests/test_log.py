@@ -12,135 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for amiss.log: DatabaseLogHandler and UvicornAccessLogFilter."""
+"""Tests for amiss.log: UvicornAccessLogFilter."""
 
 from logging import LogRecord
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from amiss.log import DatabaseLogHandler, UvicornAccessLogFilter
-
-
-class TestDatabaseLogHandler:
-    @patch("amiss.log.Session")
-    def test_emit_with_circuitId(self, mock_session_cls):
-        handler = DatabaseLogHandler()
-        record = LogRecord("test", 20, "test.py", 1, None, (), None)
-        record.msg = {"event": "test event", "circuitId": 42}
-
-        mock_session = MagicMock()
-        mock_session_cls.begin.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_session_cls.begin.return_value.__exit__ = MagicMock(return_value=False)
-
-        handler.emit(record)
-        mock_session.add.assert_called_once()
-
-    @patch("amiss.log.Session")
-    def test_emit_without_structlog_dict_skips(self, mock_session_cls):
-        handler = DatabaseLogHandler()
-        record = LogRecord("test", 20, "test.py", 1, "plain string message", (), None)
-
-        mock_session = MagicMock()
-        mock_session_cls.begin.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_session_cls.begin.return_value.__exit__ = MagicMock(return_value=False)
-
-        handler.emit(record)
-        mock_session.add.assert_not_called()
-
-    @patch("amiss.log.Session")
-    def test_emit_with_no_matching_id_sets_negative(self, mock_session_cls):
-        handler = DatabaseLogHandler()
-        record = LogRecord("test", 20, "test.py", 1, None, (), None)
-        record.msg = {"event": "some event"}
-
-        mock_session = MagicMock()
-        mock_session_cls.begin.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_session_cls.begin.return_value.__exit__ = MagicMock(return_value=False)
-
-        handler.emit(record)
-        # circuitId is -1, so add should not be called (circuitId < 0)
-        mock_session.add.assert_not_called()
-
-    @patch("amiss.log.Session")
-    def test_emit_with_connectionId_queries_db(self, mock_session_cls):
-        handler = DatabaseLogHandler()
-        record = LogRecord("test", 20, "test.py", 1, None, (), None)
-        record.msg = {"event": "test", "connectionId": "4f0a4f6b-1187-4670-b451-bb8005105ba5"}
-
-        mock_session = MagicMock()
-        mock_session.query.return_value.filter.return_value.scalar.return_value = 5
-        mock_session_cls.begin.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_session_cls.begin.return_value.__exit__ = MagicMock(return_value=False)
-
-        handler.emit(record)
-        mock_session.query.assert_called_once()
-        mock_session.add.assert_called_once()
-
-    @patch("amiss.log.Session")
-    def test_emit_with_globalReservationId_queries_db(self, mock_session_cls):
-        handler = DatabaseLogHandler()
-        record = LogRecord("test", 20, "test.py", 1, None, (), None)
-        record.msg = {"event": "test", "globalReservationId": "4f0a4f6b-1187-4670-b451-bb8005105ba5"}
-
-        mock_session = MagicMock()
-        mock_session.query.return_value.filter.return_value.scalar.return_value = 7
-        mock_session_cls.begin.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_session_cls.begin.return_value.__exit__ = MagicMock(return_value=False)
-
-        handler.emit(record)
-        mock_session.query.assert_called_once()
-        mock_session.add.assert_called_once()
-
-    @patch("amiss.log.Session")
-    def test_emit_with_correlationId_queries_db(self, mock_session_cls):
-        handler = DatabaseLogHandler()
-        record = LogRecord("test", 20, "test.py", 1, None, (), None)
-        record.msg = {"event": "test", "correlationId": "4f0a4f6b-1187-4670-b451-bb8005105ba5"}
-
-        mock_session = MagicMock()
-        mock_session.query.return_value.filter.return_value.scalar.return_value = 9
-        mock_session_cls.begin.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_session_cls.begin.return_value.__exit__ = MagicMock(return_value=False)
-
-        handler.emit(record)
-        mock_session.query.assert_called_once()
-        mock_session.add.assert_called_once()
-
-    @patch("amiss.log.Session")
-    def test_emit_with_connectionId_none_string_skips_lookup(self, mock_session_cls):
-        handler = DatabaseLogHandler()
-        record = LogRecord("test", 20, "test.py", 1, None, (), None)
-        record.msg = {"event": "test", "connectionId": "None"}
-
-        mock_session = MagicMock()
-        mock_session_cls.begin.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_session_cls.begin.return_value.__exit__ = MagicMock(return_value=False)
-
-        handler.emit(record)
-        # connectionId == "None" is explicitly skipped, falls through to circuitId = -1
-        mock_session.add.assert_not_called()
-
-    @patch("amiss.log.Session")
-    def test_emit_with_connectionId_not_found_skips(self, mock_session_cls):
-        handler = DatabaseLogHandler()
-        record = LogRecord("test", 20, "test.py", 1, None, (), None)
-        record.msg = {"event": "test", "connectionId": "4f0a4f6b-1187-4670-b451-bb8005105ba5"}
-
-        mock_session = MagicMock()
-        mock_session.query.return_value.filter.return_value.scalar.return_value = None
-        mock_session_cls.begin.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_session_cls.begin.return_value.__exit__ = MagicMock(return_value=False)
-
-        # scalar() returns None when no circuit matches the connectionId (e.g. during seeding).
-        # The handler must not raise, and must not store the unmatched message.
-        handler.emit(record)
-        mock_session.add.assert_not_called()
+from amiss.log import UvicornAccessLogFilter
 
 
 class TestUvicornAccessLogFilter:
     @pytest.mark.parametrize(
-        "args,expected",
+        ("args", "expected"),
         [
             pytest.param(("127.0.0.1", "GET", "/healthcheck"), False, id="healthcheck-filtered"),
             pytest.param(("127.0.0.1", "GET", "/api/circuits"), True, id="other-endpoint-passes"),

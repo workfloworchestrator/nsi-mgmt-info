@@ -24,8 +24,8 @@ from amiss import app
 from amiss.frontend.circuits import _in_tab
 from amiss.frontend.home import Tone, _stat_line
 from amiss.sources.aggregator import CircuitOnSdp, PathSegment, SpectrumRow, SpectrumView
-from amiss.sources.reconcile import ReconcileStatus, SdpReconciliation, SdpRow, StpReconciliation, StpRow
-from amiss.sources.wfo import CircuitRow
+from amiss.sources.reconcile import DdsStp, ReconcileStatus, SdpReconciliation, SdpRow, StpReconciliation, StpRow
+from amiss.sources.wfo import CircuitRow, StpSub
 
 client = TestClient(app)
 
@@ -62,14 +62,23 @@ def test_in_tab(state, tab, expected):
     assert _in_tab(CircuitRow(subscription_id="x", state=state), tab) is expected
 
 
-def _patch_dashboard_sources(circuits=None, stps=None, sdps=None, spectrum=None):
-    """Patch the dashboard's live sources so the landing page renders without network calls."""
-    return (
-        patch("amiss.frontend.home.get_circuits", return_value=circuits if circuits is not None else []),
-        patch("amiss.frontend.home.get_stps", return_value=stps or StpReconciliation(rows=[])),
-        patch("amiss.frontend.home.get_sdps", return_value=sdps or SdpReconciliation(rows=[])),
-        patch("amiss.frontend.home.get_spectrum", return_value=spectrum or SpectrumView(rows=[])),
-    )
+# The dashboard fetches each upstream directly (composing the cards itself), so tests stub the fetch
+# functions on the home module. Default each to an empty list; override per test.
+_DASHBOARD_FETCHES = (
+    "fetch_circuits",
+    "fetch_stp_subscriptions",
+    "fetch_sdp_subscriptions",
+    "fetch_dds_stps",
+    "fetch_dds_sdps",
+    "fetch_agg_circuits",
+)
+
+
+def _dashboard_patches(**overrides):
+    """Patch each dashboard fetch on amiss.frontend.home; overrides set specific return values."""
+    values: dict = {name: [] for name in _DASHBOARD_FETCHES}
+    values.update(overrides)
+    return [patch(f"amiss.frontend.home.{name}", return_value=value) for name, value in values.items()]
 
 
 def test_landing_page_injects_brand_style():
@@ -80,13 +89,15 @@ def test_landing_page_injects_brand_style():
 
 
 def test_dashboard_shows_summary_cards():
-    circuits = [CircuitRow(subscription_id="a", state="ACTIVATED"), CircuitRow(subscription_id="b", state="FAILED")]
-    stps = StpReconciliation(rows=[StpRow(stp_id="x", status=ReconcileStatus.IN_BOTH)])
-    spectrum = SpectrumView(
-        rows=[SpectrumRow(subscription_id="d1", sdp_name="A<->B", stp_a="a", stp_z="b", circuit_count=1)]
-    )
     with ExitStack() as stack:
-        for p in _patch_dashboard_sources(circuits=circuits, stps=stps, spectrum=spectrum):
+        for p in _dashboard_patches(
+            fetch_circuits=[
+                CircuitRow(subscription_id="a", state="ACTIVATED"),
+                CircuitRow(subscription_id="b", state="FAILED"),
+            ],
+            fetch_stp_subscriptions=[StpSub(subscription_id="s", stp_id="urn:ogf:network:x")],
+            fetch_dds_stps=[DdsStp(stp_id="x")],  # matches the STP sub -> "backed by DDS"
+        ):
             stack.enter_context(p)
         response = client.get("/api/")  # the dashboard component tree (the SPA fetches this)
     assert response.status_code == 200
@@ -96,9 +107,19 @@ def test_dashboard_shows_summary_cards():
     assert "Spectrum" in response.text and "SDPs in use" in response.text
 
 
-def test_dashboard_card_shows_unavailable_on_source_failure():
+def test_dashboard_fetches_each_source_once():
+    # locks in the no-duplicate-fetch behaviour: each upstream is hit exactly once per dashboard load
     with ExitStack() as stack:
-        for p in _patch_dashboard_sources(stps=StpReconciliation(error="STP source down")):
+        mocks = {name: stack.enter_context(p) for name, p in zip(_DASHBOARD_FETCHES, _dashboard_patches())}
+        response = client.get("/api/")
+    assert response.status_code == 200
+    assert all(mock.call_count == 1 for mock in mocks.values()), {n: m.call_count for n, m in mocks.items()}
+
+
+def test_dashboard_card_shows_unavailable_on_source_failure():
+    # a failed fetch (None) makes its card unavailable: reconcile_stps(None, ...) -> error state
+    with ExitStack() as stack:
+        for p in _dashboard_patches(fetch_stp_subscriptions=None):
             stack.enter_context(p)
         response = client.get("/api/")
     assert response.status_code == 200
@@ -190,12 +211,9 @@ def test_circuit_detail_not_found():
 
 
 def test_dashboard_circuit_card_unavailable_when_wfo_unreachable():
-    with (
-        patch("amiss.frontend.home.get_circuits", return_value=None),
-        patch("amiss.frontend.home.get_stps", return_value=StpReconciliation(rows=[])),
-        patch("amiss.frontend.home.get_sdps", return_value=SdpReconciliation(rows=[])),
-        patch("amiss.frontend.home.get_spectrum", return_value=SpectrumView(rows=[])),
-    ):
+    with ExitStack() as stack:
+        for p in _dashboard_patches(fetch_circuits=None):
+            stack.enter_context(p)
         response = client.get("/api/")
     assert response.status_code == 200
     assert "unavailable" in response.text

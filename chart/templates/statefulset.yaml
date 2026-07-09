@@ -108,22 +108,3 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-  {{- if .Values.persistence.enabled }}
-  volumeClaimTemplates:
-    - metadata:
-        name: {{ .Values.persistence.name }}
-      {{- with .Values.persistence.annotations }}
-        annotations:
-        {{- range $key, $value := . }}
-          {{ $key }}: {{ $value }}
-        {{- end }}
-      {{- end }}
-      spec:
-        accessModes:
-        {{- range .Values.persistence.accessModes }}
-          - {{ . | quote }}
-        {{- end }}
-        resources:
-          requests:
-            storage: {{ .Values.persistence.size | quote }}
-  {{- end }}

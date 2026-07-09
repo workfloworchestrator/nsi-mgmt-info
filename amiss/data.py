@@ -14,24 +14,20 @@
 
 """Data accessor the frontend routes call to get table rows.
 
-In the default live mode this queries the WFO (forwarding the caller's OIDC token) and the DDS proxy
-per request. ``NSI_AMISS_DATABASE_ENABLED`` is intended to switch to reading a database cache filled
-by the scheduler; that read path is not implemented yet (needs a WFO service identity for the poller),
-so it currently serves live regardless — see the plan's DB-cache follow-up.
+Queries the WFO (forwarding the caller's OIDC token) and the DDS/aggregator proxies live per request;
+there is no cache. Accessors that need more than one upstream fetch them concurrently.
 """
+
+from concurrent.futures import ThreadPoolExecutor
 
 import structlog
 
-from amiss.settings import settings
 from amiss.sources.aggregator import PathSegment, SpectrumView, build_spectrum, fetch_agg_circuits
 from amiss.sources.dds_topology import fetch_dds_sdps, fetch_dds_stps
 from amiss.sources.reconcile import SdpReconciliation, StpReconciliation, reconcile_sdps, reconcile_stps
 from amiss.sources.wfo import CircuitRow, fetch_circuits, fetch_sdp_subscriptions, fetch_stp_subscriptions
 
 logger = structlog.get_logger(__name__)
-
-if settings.NSI_AMISS_DATABASE_ENABLED:
-    logger.warning("NSI_AMISS_DATABASE_ENABLED is set but DB-backed serving is not implemented yet; serving live")
 
 
 # These accessors are the boundary to external systems and back the user-facing pages (incl. the
@@ -47,27 +43,37 @@ def get_circuits(token: str | None) -> list[CircuitRow] | None:
 
 
 def get_stps(token: str | None) -> StpReconciliation:
-    """Return the STP rows reconciled between the WFO subscriptions and the DDS topology."""
+    """Return the STP rows reconciled between the WFO subscriptions and the DDS topology (fetched concurrently)."""
     try:
-        return reconcile_stps(fetch_stp_subscriptions(token), fetch_dds_stps())
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            wfo = pool.submit(fetch_stp_subscriptions, token)
+            dds = pool.submit(fetch_dds_stps)
+        return reconcile_stps(wfo.result(), dds.result())
     except Exception as e:
         logger.warning("STP reconciliation failed", error=str(e))
         return StpReconciliation(error="STP data unavailable")
 
 
 def get_sdps(token: str | None) -> SdpReconciliation:
-    """Return the SDP rows reconciled between the WFO subscriptions and the DDS topology."""
+    """Return the SDP rows reconciled between the WFO subscriptions and the DDS topology (fetched concurrently)."""
     try:
-        return reconcile_sdps(fetch_sdp_subscriptions(token), fetch_dds_sdps())
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            wfo = pool.submit(fetch_sdp_subscriptions, token)
+            dds = pool.submit(fetch_dds_sdps)
+        return reconcile_sdps(wfo.result(), dds.result())
     except Exception as e:
         logger.warning("SDP reconciliation failed", error=str(e))
         return SdpReconciliation(error="SDP data unavailable")
 
 
 def get_spectrum(token: str | None) -> SpectrumView:
-    """Return the SDPs with the WFO-backed circuits crossing them (WFO SDPs + circuits + aggregator paths)."""
+    """Return the SDPs with the WFO-backed circuits crossing them (WFO SDPs + circuits + aggregator, concurrent)."""
     try:
-        return build_spectrum(fetch_sdp_subscriptions(token), fetch_agg_circuits(), fetch_circuits(token))
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            sdps = pool.submit(fetch_sdp_subscriptions, token)
+            agg = pool.submit(fetch_agg_circuits)
+            circuits = pool.submit(fetch_circuits, token)
+        return build_spectrum(sdps.result(), agg.result(), circuits.result())
     except Exception as e:
         logger.warning("building spectrum failed", error=str(e))
         return SpectrumView(error="Spectrum data unavailable")
