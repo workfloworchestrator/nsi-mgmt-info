@@ -34,6 +34,12 @@ session = requests.Session()
 session.mount("http://", requests_session_adapter)
 session.mount("https://", requests_session_adapter)
 
+# (connect, read) timeout in seconds for outbound HTTP requests.
+REQUEST_TIMEOUT: tuple[float, float] = (5.0, 30.0)
+
+# Response media types accepted as JSON (application/graphql-response+json is used by GraphQL over HTTP).
+JSON_MEDIA_TYPES = frozenset({"application/json", "application/graphql-response+json"})
+
 
 def _request_auth_kwargs() -> dict[str, Any]:
     """Build the authentication kwargs for proxy requests: mutual TLS, or local-dev headers.
@@ -58,23 +64,16 @@ def nsi_util_get_json(url: HttpUrl, queryparams: dict) -> bytes | None:
 
     log.debug("SENDING HTTP REQUEST FOR JSON", url=str(url))
     try:
-        # Append queries to URL, assume caller did proper escaping.
-        fullurl = str(url)
-        if len(queryparams) > 0:
-            fullurl += "?"
-        for k, v in queryparams.items():
-            qstr = str(k) + "=" + str(v)
-            fullurl += "&" + qstr
-
-        r = session.get(fullurl, **_request_auth_kwargs())
-    except requests.exceptions.ConnectionError as e:
+        r = session.get(str(url), params=queryparams, timeout=REQUEST_TIMEOUT, **_request_auth_kwargs())
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
         log.warning("cannot get JSON document", url=str(url), error=str(e))
         return None
 
     if r.status_code != 200:
         log.warning(f"{url} returned {r.status_code} with message {r.reason}")
         return None
-    if (content_type := r.headers["content-type"].lower()) != "application/json":
-        log.warning(f"{url} did not return application/json but {content_type}")
+    media_type = r.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if media_type not in JSON_MEDIA_TYPES:
+        log.warning(f"{url} did not return JSON but {media_type!r}")
         return None
     return r.content

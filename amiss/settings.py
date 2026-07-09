@@ -41,27 +41,9 @@ class Settings(BaseSettings):
     # requests certificate verification, only disable while debugging!
     VERIFY_REQUESTS: bool = True
 
-    # database directory, may be relative or absolute.
-    # The default is a shared in-memory SQLite database (ephemeral, no persistence).
-    # The `uri=true` query is required so SQLite parses `file::memory:` as a URI instead of
-    # creating a file literally named `file::memory:` on disk.
-    DATABASE_URI: str = "sqlite:///file::memory:?cache=shared&uri=true"
-
-    # seed dummy parent Reservations and Segments at startup (dev/demo only)
-    SEED_DUMMY_SEGMENTS_DATA: bool = False
-
-    # directory containing static files, such as images and SOAP templates
+    # directory containing static files (images)
     STATIC_DIRECTORY: DirectoryPath = DirectoryPath("static")
 
-    # nsi-mgmt-info (external) URL (scheme, host, port, prefix)
-    NSA_SCHEME: str = "http"
-    NSA_HOST: str = "localhost"
-    NSA_PORT: str = "8000"
-    NSA_PATH_PREFIX: str = ""
-
-    # NSI provider
-    NSI_PROVIDER_URL: HttpUrl = HttpUrl("http://127.0.0.1:9000/nsi-v2/ConnectionServiceProvider")
-    NSI_PROVIDER_ID: str = "urn:ogf:network:domain.example:2024:nsa"
     NSI_DDS_PROXY_URL: HttpUrl = HttpUrl("http://dds.domain.example/dds/")
     NSI_AGG_PROXY_URL: HttpUrl = HttpUrl("http://aggregator-proxy.domain.example/")
 
@@ -74,21 +56,14 @@ class Settings(BaseSettings):
     NSI_PROXY_AUTH_METHOD: str = "x509"
     NSI_PROXY_CLIENT_DN: str = "CN=claude@local.laptop"
 
-    # upstream WFO (workflow orchestrator) management URL
-    NSI_AMISS_WFO_URL: HttpUrl = HttpUrl("http://orchestrator.domain.example/mgmt")
+    # upstream WFO (workflow orchestrator) base URL; the GraphQL client appends /api/graphql
+    NSI_AMISS_WFO_URL: HttpUrl = HttpUrl("http://orchestrator.domain.example")
 
     # Logging
-    SQL_LOGGING: bool = False
     LOG_LEVEL: str = "INFO"
 
     # ASGI root path prefix for reverse proxy with path stripping
     ROOT_PATH: str = ""
-
-    # NOTE: HttpUrl class will automatically add trailing / when converting to str
-    @property
-    def NSA_BASE_URL(self) -> HttpUrl:
-        """External base URL of this NSA."""
-        return HttpUrl(f"{self.NSA_SCHEME}://{self.NSA_HOST}:{self.NSA_PORT}{self.NSA_PATH_PREFIX}")
 
     # Verify property for Requests:
     # False -> no verification

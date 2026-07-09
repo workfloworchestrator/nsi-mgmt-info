@@ -12,12 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for amiss.nsi proxy authentication kwargs."""
+"""Tests for amiss.nsi proxy authentication kwargs and JSON fetching."""
+
+from unittest.mock import patch
 
 import pytest
+import requests
+from pydantic import HttpUrl
 
 from amiss import nsi
 from amiss.settings import settings
+
+
+class _FakeResponse:
+    def __init__(self, status_code=200, content_type="application/json", content=b"{}", reason="OK"):
+        self.status_code = status_code
+        self.headers = {} if content_type is None else {"content-type": content_type}
+        self.content = content
+        self.reason = reason
 
 
 def test_header_auth_when_mtls_disabled(monkeypatch):
@@ -55,3 +67,29 @@ def test_mtls_enabled_without_cert_raises(monkeypatch):
     monkeypatch.setattr(settings, "NSI_AMISS_PRIVATE_KEY", None)
     with pytest.raises(RuntimeError):
         nsi._request_auth_kwargs()
+
+
+@pytest.mark.parametrize(
+    ("content_type", "expected"),
+    [
+        pytest.param("application/json", b"{}", id="plain-json"),
+        pytest.param("application/graphql-response+json", b"{}", id="graphql-json"),
+        pytest.param("application/json; charset=utf-8", b"{}", id="json-with-charset"),
+        pytest.param("text/html", None, id="html-rejected"),
+        pytest.param(None, None, id="missing-header"),
+    ],
+)
+def test_get_json_accepts_json_media_types(monkeypatch, content_type, expected):
+    """JSON and graphql-response+json (with optional charset) are accepted; other types return None."""
+    monkeypatch.setattr(settings, "NSI_PROXY_MTLS_ENABLED", False)
+    with patch.object(nsi.session, "get", return_value=_FakeResponse(content_type=content_type)) as mock_get:
+        result = nsi.nsi_util_get_json(HttpUrl("http://proxy.example/x"), {})
+    assert result == expected
+    assert mock_get.call_args.kwargs["timeout"] == nsi.REQUEST_TIMEOUT
+
+
+def test_get_json_returns_none_on_timeout(monkeypatch):
+    """A read timeout is logged and yields None rather than propagating."""
+    monkeypatch.setattr(settings, "NSI_PROXY_MTLS_ENABLED", False)
+    with patch.object(nsi.session, "get", side_effect=requests.exceptions.ReadTimeout("slow")):
+        assert nsi.nsi_util_get_json(HttpUrl("http://proxy.example/x"), {}) is None

@@ -4,19 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nsi-mgmt-info"
-version = "0.3.1.dev1"
+version = "0.1.0.dev1"
 dependencies = [
-    "apscheduler==3.11.2",
-    "fastapi[standard]==0.137.1",
+    "fastapi[standard]==0.138.0",
     "fastui==0.9.0",
-    "lxml==6.1.1",
-    "psycopg2-binary==2.9.12",
     "pydantic==2.13.4",
     "pydantic-settings==2.14.2",
-    "python-statemachine==3.2.0",
-    "pytz==2026.2",
     "requests==2.34.2",
-    "sqlmodel==0.0.38",
     "structlog==26.1.0",
 ]
 requires-python = ">=3.12"
@@ -28,7 +22,7 @@ maintainers = [
     {name = "Arno Bakker"},
     {name = "Hans Trompert"},
 ]
-description = "Network Service Interface (NSI) ultimate Requester Agent (uRA) for the Advanced North Atlantic (ANA) consortium"
+description = "AMISS, the NSI Management Information Service for the Advanced North Atlantic (ANA) consortium"
 readme = "README.md"
 keywords = [
     "ANA",
@@ -41,22 +35,20 @@ classifiers = [
 license = "Apache-2.0"
 license-files = ["LICENSE.txt"]
 
-[tool.setuptools]
-packages = ["amiss", "amiss.frontend"]
+[tool.setuptools.packages.find]
+include = ["amiss*"]
 
 [tool.setuptools.data-files]
 "share/amiss/static" = ["static/*"]
 
 [dependency-groups]
 dev = [
-    "lxml-stubs==0.5.1",
     "mypy==2.1.0",
-    "python-statemachine[diagrams]==3.2.0",
-    "ruff==0.15.17",
-    "types-pytz==2026.2.0.20260518",
+    "ruff==0.15.19",
     "types-requests==2.33.0.20260518",
-    "pytest==9.1.0",
+    "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
+    "responses==0.26.2",
 ]
 
 [project.urls]

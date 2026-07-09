@@ -1,4 +1,4 @@
-# Copyright 2024-2025 SURF.
+# Copyright 2024-2026 SURF.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,151 +12,72 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Arno TODO:
-# * Retrieve Spans for all or a given Reservation from Aggregator Proxy, and store in DB
-# * Or: Live Retrieve Spans for all reservations, figure out which reservations use the same spectrum, show in spectrum detail view.
-#
-# Use https://github.com/workfloworchestrator/nsi-aggregator-proxy#get-reservationsconnectionid
-# with the "detail" parameter set to "full".
-#
-# Refactor:
-# * Talk to DDS-Proxy instead of DDS directly to get STP and SDP.
-# *
+"""Spectrum: the SDPs with the circuits crossing each, built live from WFO SDPs + aggregator paths."""
 
-from typing import Annotated
+from enum import Enum
 
 from fastapi import APIRouter
 from fastui import AnyComponent, FastUI
 from fastui import components as c
-from fastui.components import FireEvent
 from fastui.events import GoToEvent
-from fastui.forms import fastui_form
 from pydantic import BaseModel, Field
-from sqlmodel import col
+from starlette.requests import Request
 
-from amiss.db import Session
-from amiss.frontend.util import app_page, button_row, segment_table, spectrum_table
-from amiss.model import SDP, Segment
+from amiss.data import get_spectrum
+from amiss.frontend.util import (
+    app_page,
+    button_row,
+    error_message,
+    root_url,
+    sort_form,
+    sort_rows,
+    spectrum_circuit_table,
+    spectrum_sdp_table,
+    token_from_request,
+)
 
 router = APIRouter()
 
+_UNAVAILABLE = "Spectrum unavailable: the aggregator proxy or WFO could not be reached."
+
+
+class SpectrumSort(str, Enum):
+    sdp_name = "sdp_name"
+    stp_a = "stp_a"
+    circuit_count = "circuit_count"
+    total_capacity = "total_capacity"
+
+
+class SpectrumSortForm(BaseModel):
+    sort: SpectrumSort | None = Field(default=None, title="Sort by")
+
 
 @router.get("", response_model=FastUI, response_model_exclude_none=True)
-async def spectrum() -> list[AnyComponent]:
-    """Redirect to active tab of spectrum page."""
-    return [c.FireEvent(event=GoToEvent(url="/spectrum/active"))]
-
-
-@router.get("/active", response_model=FastUI, response_model_exclude_none=True)
-def spectrum_active() -> list[AnyComponent]:
-    """Display all active SDP in a table."""
-    with Session() as session:
-        sdps = session.query(SDP).filter(col(SDP.active)).order_by(col(SDP.id)).all()
+def spectrum(request: Request, sort: str | None = None) -> list[AnyComponent]:
+    """List the SDPs with the count and capacity of the circuits crossing each."""
+    view = get_spectrum(token_from_request(request))
+    if view.error:
+        return app_page(error_message(_UNAVAILABLE), title="Spectrum")
     return app_page(
-        *tabs(),
-        spectrum_table(sdps),
-        title="Active Spectra",
+        sort_form(SpectrumSortForm, root_url("/spectrum"), sort),
+        spectrum_sdp_table(sort_rows(view.rows, sort)),
+        title="Spectrum",
     )
 
 
-@router.get("/inactive", response_model=FastUI, response_model_exclude_none=True)
-def spectrum_inactive() -> list[AnyComponent]:
-    """Display all inactive SDP in a table."""
-    with Session() as session:
-        sdps = session.query(SDP).filter(col(SDP.active).is_(False)).order_by(col(SDP.id)).all()
+@router.get("/{subscription_id}/", response_model=FastUI, response_model_exclude_none=True)
+def spectrum_detail(request: Request, subscription_id: str) -> list[AnyComponent]:
+    """Show the circuits crossing one SDP, re-fetched live by subscription id."""
+    view = get_spectrum(token_from_request(request))
+    if view.error:
+        return app_page(error_message(_UNAVAILABLE), title="Spectrum")
+    sdp = next((row for row in view.rows if row.subscription_id == subscription_id), None)
+    if sdp is None:
+        return app_page(title=f"No SDP with id {subscription_id}.")
+    heading = f"{sdp.stp_a} <-> {sdp.stp_z}" if sdp.stp_a else (sdp.sdp_name or "")
     return app_page(
-        *tabs(),
-        spectrum_table(sdps),
-        title="Inactive Spectra",
+        button_row([c.Button(text="Back", on_click=GoToEvent(url=root_url("/spectrum")), class_name="+ ms-2")]),
+        c.Heading(text=heading, level=4),
+        spectrum_circuit_table(sdp.circuits),
+        title=f"SDP {sdp.sdp_name}",
     )
-
-
-@router.get("/all", response_model=FastUI, response_model_exclude_none=True)
-def spectrum_all() -> list[AnyComponent]:
-    """Display all SDP in a table."""
-    with Session() as session:
-        sdps = session.query(SDP).order_by(col(SDP.id)).all()
-    return app_page(
-        *tabs(),
-        spectrum_table(sdps),
-        title="All Spectra",
-    )
-
-
-@router.get("/{id}/", response_model=FastUI, response_model_exclude_none=True)
-def spectrum_detail(id: int) -> list[AnyComponent]:
-    """Display spectrum details and action buttons."""
-    with Session() as session:
-        sdp = session.query(SDP).filter(SDP.id == id).one_or_none()  # type: ignore[arg-type]
-        if sdp is None:
-            return app_page(title=f"No SDP with id {id}.")
-        want_sdp_ids = [sdp.stpA.stpId, sdp.stpZ.stpId]
-        segments = session.query(Segment).all()
-
-    # Keep the segments whose STP (source or dest) (minus any ?vlan=... suffix) is one of this SDP's STPs.
-    spectrum_segments = []
-    for segment in segments:
-        for direction_stp in [segment.sourceStp, segment.destStp]:
-            segment_stp_id = direction_stp.split("?")[0] if "?" in direction_stp else direction_stp
-            if segment_stp_id in want_sdp_ids:
-                if segment_stp_id not in spectrum_segments:
-                    spectrum_segments.append(segment)
-
-    # Convert to HTML elements
-    segtable = segment_table(spectrum_segments)
-
-    return app_page(
-        button_row(
-            [
-                c.Button(
-                    text="Back",
-                    on_click=GoToEvent(url="/spectrum"),
-                    class_name="+ ms-2",
-                ),
-            ]
-        ),
-        c.Heading(text="SDP details", level=4),
-        c.Details(data=sdp),
-        c.Heading(text="Reservations on this link", level=4),
-        segtable,
-        title=f"SDP {sdp.description}",
-    )
-
-
-class SpectrumUpdateForm(BaseModel):
-    description: str = Field()
-
-
-@router.post("/{id}/update", response_model=FastUI, response_model_exclude_none=True)
-def spectrum_update(id: int, form: Annotated[SpectrumUpdateForm, fastui_form(SpectrumUpdateForm)]) -> list[FireEvent]:
-    with Session.begin() as session:
-        sdp = session.query(SDP).filter(col(SDP.id) == id).one_or_none()
-        if sdp is not None:
-            sdp.description = form.description
-    return [c.FireEvent(event=GoToEvent(url=f"/spectrum/{id}/"))]
-
-
-def tabs() -> list[AnyComponent]:
-    return [
-        c.LinkList(
-            links=[
-                c.Link(
-                    components=[c.Text(text="Active")],
-                    on_click=GoToEvent(url="/spectrum/active"),
-                    active="startswith:/spectrum/active",
-                ),
-                c.Link(
-                    components=[c.Text(text="Inactive")],
-                    on_click=GoToEvent(url="/spectrum/inactive"),
-                    active="startswith:/spectrum/inactive",
-                ),
-                c.Link(
-                    components=[c.Text(text="All")],
-                    on_click=GoToEvent(url="/spectrum/all"),
-                    active="startswith:/spectrum/all",
-                ),
-            ],
-            mode="tabs",
-            class_name="+ mb-4",
-        ),
-    ]

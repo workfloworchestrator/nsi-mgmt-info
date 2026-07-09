@@ -31,6 +31,7 @@ def main() -> None:
             f"on {platform.node()}"
         )
     )
+    logger.info("started with settings", **settings.model_dump(mode="json"))
     match settings.verify:
         case False:
             message = "certificate verification disabled"

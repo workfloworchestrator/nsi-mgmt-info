@@ -1,4 +1,4 @@
-# Copyright 2024-2025 SURF.
+# Copyright 2024-2026 SURF.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from fastapi import APIRouter
-from fastapi.responses import JSONResponse
-
-router = APIRouter()
-
-
-@router.get("/healthcheck")
-def healthcheck() -> JSONResponse:
-    """Liveness/readiness probe returning JSON; its access logs are filtered out (see UvicornAccessLogFilter)."""
-    return JSONResponse(content={"status": "healthy"}, status_code=200)
+"""Live data sources: query and map upstream data (WFO GraphQL, DDS proxy) into render DTOs."""

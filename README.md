@@ -1,6 +1,6 @@
 # nsi-mgmt-info
 
-The NSI Management Information Service offers an interface to obtain information that ANA manangement 
+The NSI Management Information Service (AMISS) offers an interface to obtain information that ANA management 
 needs for decision making. In other words, this service makes available and visualizes data effectively to enable strategic and engineering decision-making processes. The nsi-mgmt-info service uses information from the NSI-Orchestrator and other ANA-NSI 
 components to generate useful overviews and statistics.
   
@@ -23,9 +23,45 @@ ANA Engineering and ANA Planning Groups.
     <img width="50%" src="/artwork/ana-logo-scaled-ab2.png">
 </p>
 
+## What AMISS shows
+
+AMISS is **read-only**: it surfaces and visualizes information sourced live from the ANA-NSI stack and does not create or modify anything (there is no NSI control plane behind it). The **WFO orchestrator** is the source of truth; the **DDS proxy** is used to reconcile the known topology against it. Every page fetches on demand — there is no database or cache.
+
+- **Dashboard** (landing page): a summary card per area with at-a-glance counts — circuits by state, and STPs/SDPs by reconciliation status — each card linking to its full table.
+- **Circuits** (`/circuits`): the MDP2P point-to-point circuits from the WFO — source/destination STP and VLAN, bandwidth, NSI state, and **who created the circuit** (from the create workflow); the detail view also shows the connection and global-reservation ids plus the circuit's multi-domain **path** (the aggregator's per-segment provider-NSA, STPs, capacity, and status). Tabbed by state (**Activated / Failed / Terminated / All**), sortable, with a per-circuit detail page.
+- **Service Termination Points** (`/stp`): the STP subscriptions held by the WFO, reconciled against the DDS topology and flagged **backed by DDS** (in both), **DDS only** (topology present but no subscription yet), or **not in DDS** (a subscription the DDS no longer advertises). Sortable.
+- **Service Demarcation Points** (`/sdp`): the same WFO-vs-DDS reconciliation for the demarcation points that pair two STPs.
+- **Spectrum** (`/spectrum`): the **SDPs** (each the inter-domain link between two topologies) and the circuits crossing each, showing per-SDP circuit count and total capacity. The SDP inventory comes from the WFO SDP subscriptions; the paths come from the **aggregator proxy** (`GET /reservations?detail=full`), the only source of a circuit's multi-domain segments. Only circuits with a **non-terminated WFO subscription** are shown (matched by connection id), so `/spectrum` stays consistent with `/circuits`; each circuit's details (description, capacity, state) come from the **WFO** — only the per-SDP VLAN comes from the aggregator path. A drill-in lists the circuits on an SDP (each linking to its circuit detail/path); multi-domain circuits not matching a known SDP are grouped under **Unattributed circuits**.
+- **Health** (`/healthcheck`): a liveness/readiness probe returning JSON.
+
+## Performance
+
+Every page fetches live per request (no cache). A page's accessor issues one or more upstream calls —
+WFO GraphQL, DDS proxy, aggregator proxy — and independent calls run **concurrently**, so a page's
+wall-clock is roughly the *slowest single upstream*, not the sum. The dashboard composes all its cards
+from one concurrent fetch per upstream (each fetched once), so it is about as fast as the slowest one.
+
+The dominant cost is a **fixed ~400–500 ms per WFO GraphQL request**, largely independent of the query
+or result size (responses are a few KB and JSON parsing is negligible). That points at per-request work
+at the orchestrator — most likely **OIDC token validation on every request** (the forwarded access
+token is introspected/validated at the WFO) plus GraphQL/DB setup — so a single WFO round-trip is the
+practical per-page floor. Set `LOG_LEVEL=DEBUG` to see per-request `elapsed_ms` timings.
+
+Directions to improve, largest first:
+
+- **Orchestrator-side (biggest win):** cache token introspection / validation at the WFO so each
+  GraphQL request no longer pays the full auth cost. This speeds up **every** page across the stack and
+  is the only way under the one-round-trip floor. Out of scope for this repo.
+- **Batch the dashboard's WFO queries:** issue the circuits/STP/SDP subscription queries as a single
+  aliased GraphQL request instead of three, trading three WFO round-trips for one (also helps
+  `/spectrum`, which makes two). Cannot beat the single-round-trip floor.
+- A response cache would hide the latency but adds staleness; the orchestrator is the source of truth,
+  so the token-validation fix above is preferred.
+
 ## Prerequisites
 
-- For mutual-TLS auth to the ANA-NSI proxies (`NSI_PROXY_MTLS_ENABLED=True`): a valid client certificate and private key. Not needed when using header auth (`NSI_PROXY_MTLS_ENABLED=False`).
+- **Standard deployment — behind the ANA portal (recommended).** The portal's oauth2-proxy authenticates the user via OIDC, enforces group membership, and forwards the user's identity and access token (`X-Auth-Request-*`). AMISS forwards that token to the WFO orchestrator on each request, so access is authorised **end-to-end, per user**, and **no client certificate is required**.
+- **Standalone / direct to the ANA-NSI proxies (alternative).** To reach the DDS (and aggregator) proxies without the portal, AMISS authenticates with either mutual TLS (`NSI_PROXY_MTLS_ENABLED=True` plus a client certificate and key) or edge-identity headers (`NSI_PROXY_MTLS_ENABLED=False`) — for local development or when mTLS is terminated at the ingress.
 - Python 3.13+ (for running from source) or Docker.
 
 ## Configuration
@@ -34,9 +70,9 @@ All settings can be configured via environment variables or an `amiss.env` file 
 
 | Variable | Default | Description |
 |---|---|---|
-| `NSI_DDS_PROXY_URL` | `http://dds.domain.example/dds/` | Base URL of the **nsi-dds-proxy** — source of topology (STPs and SDPs). |
-| `NSI_AGG_PROXY_URL` | `http://aggregator-proxy.domain.example/` | Base URL of the **nsi-aggregator-proxy** — source of reservations and segments. |
-| `NSI_AMISS_WFO_URL` | `http://orchestrator.domain.example/mgmt` | Base URL of the upstream Workflow Orchestrator (WFO) management API. |
+| `NSI_AMISS_WFO_URL` | `http://orchestrator.domain.example` | Base URL of the **WFO orchestrator** — primary source of circuits and STP/SDP subscriptions. The GraphQL client appends `/api/graphql` and forwards the end-user's OIDC token per request. |
+| `NSI_DDS_PROXY_URL` | `http://dds.domain.example/dds/` | Base URL of the **nsi-dds-proxy** — topology (STPs/SDPs) that the `/stp` and `/sdp` views reconcile against the WFO subscriptions. |
+| `NSI_AGG_PROXY_URL` | `http://aggregator-proxy.domain.example/` | Base URL of the **nsi-aggregator-proxy** — source of circuit path segments for the `/spectrum` view (fetched with AMISS's proxy identity, like the DDS proxy). |
 | `NSI_PROXY_MTLS_ENABLED` | `True` | How AMISS authenticates to the proxies. `True` = mutual TLS with the client cert/key below. `False` = send edge-identity headers (`X-Auth-Method`/`X-Client-DN`) instead — for local dev or in-cluster calls where mTLS is terminated at the ingress. |
 | `NSI_PROXY_AUTH_METHOD` | `x509` | Value sent in the `X-Auth-Method` header when `NSI_PROXY_MTLS_ENABLED=False`. |
 | `NSI_PROXY_CLIENT_DN` | `CN=claude@local.laptop` | Client DN sent in the `X-Client-DN` header when `NSI_PROXY_MTLS_ENABLED=False`. Must be authorized by the proxies. |
@@ -44,14 +80,11 @@ All settings can be configured via environment variables or an `amiss.env` file 
 | `NSI_AMISS_PRIVATE_KEY` | _(unset)_ | Path to the PEM private key for the client certificate. Required only when `NSI_PROXY_MTLS_ENABLED=True`. |
 | `CA_CERTIFICATES` | _(unset)_ | Path to a PEM file or a `c_rehash` directory of CA certificates used to verify the proxies. When unset, the default requests CA bundle is used. |
 | `VERIFY_REQUESTS` | `True` | Verify TLS certificates on outbound requests. Only disable for debugging. |
-| `DATABASE_URI` | `sqlite:///file::memory:?cache=shared&uri=true` | SQLModel database URI. Defaults to ephemeral shared in-memory SQLite; use a file path or PostgreSQL URI to persist. |
-| `SEED_DUMMY_SEGMENTS_DATA` | `False` | Seed dummy reservations/segments at startup (dev/demo only). |
 | `NSI_AMISS_HOST` | `127.0.0.1` | Interface the server binds to. The container image sets this to `0.0.0.0`. |
 | `NSI_AMISS_PORT` | `8000` | TCP port the server listens on. The container image sets this to `8080`. |
-| `STATIC_DIRECTORY` | `static` | Directory containing static assets (images, templates). |
+| `STATIC_DIRECTORY` | `static` | Directory containing static assets (images). |
 | `SITE_TITLE` | `AMISS` | Title shown in the web UI. |
 | `ROOT_PATH` | _(empty)_ | ASGI root-path prefix when deployed behind a reverse proxy that strips a path prefix. |
-| `SQL_LOGGING` | `False` | Log SQLAlchemy statements. |
 | `LOG_LEVEL` | `INFO` | Logging verbosity. Accepted values: `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
 
 A ready-to-use template is provided in `amiss.env`. The application automatically reads this file from the working directory when it starts, so in most cases you only need to edit it in place.
@@ -73,6 +106,14 @@ nsi-mgmt-info
 Note that `docker run --env-file` expects plain `KEY=VALUE` lines — no `export` keyword, no quotes around values. The provided `amiss.env` is already in this format.
 
 ## Running the Application
+
+> **Note on authentication.** The WFO-backed views (circuits, STP/SDP, dashboard) authorise
+> **per user**: AMISS forwards the caller's OIDC access token (`X-Auth-Request-Access-Token`, or a
+> plain `Authorization: Bearer`) to the orchestrator. In the standard ANA deployment the portal's
+> oauth2-proxy supplies that token and **no client certificate is needed**. The examples below run
+> AMISS **standalone** and show mutual-TLS auth to the DDS/aggregator proxies; a standalone run must
+> still arrange the WFO token itself, and can set `NSI_PROXY_MTLS_ENABLED=False` to use edge-identity
+> headers for the proxies instead of certificates.
 
 ### From source with uv
 
@@ -121,7 +162,7 @@ docker run --rm \
   -e CA_CERTIFICATES=/certs/ca-bundle.pem \
   -e NSI_DDS_PROXY_URL=https://your-dds-proxy/dds/ \
   -e NSI_AGG_PROXY_URL=https://your-aggregator-proxy/ \
-  -e NSI_AMISS_WFO_URL=https://your-orchestrator-server/mgmt \
+  -e NSI_AMISS_WFO_URL=https://your-orchestrator-server \
   ghcr.io/workfloworchestrator/nsi-mgmt-info:latest
 ```
 
@@ -178,7 +219,7 @@ spec:
             - name: NSI_AGG_PROXY_URL
               value: "https://your-aggregator-proxy/"
             - name: NSI_AMISS_WFO_URL
-              value: "https://your-wfo-server/mgmt"
+              value: "https://your-wfo-server"
             - name: NSI_AMISS_CERTIFICATE
               value: "/certs/client-certificate.pem"
             - name: NSI_AMISS_PRIVATE_KEY
@@ -223,7 +264,7 @@ image:
 env:
   NSI_DDS_PROXY_URL: https://nsi-dds-proxy.your.domain/dds/
   NSI_AGG_PROXY_URL: https://nsi-aggregator-proxy.your.domain/
-  NSI_AMISS_WFO_URL: https://nsi-orchestrator.your.domain/mgmt
+  NSI_AMISS_WFO_URL: https://nsi-orchestrator.your.domain
   CA_CERTIFICATES: /certs/ca-bundle.pem
   NSI_AMISS_CERTIFICATE: /certs/client-certificate.pem
   NSI_AMISS_PRIVATE_KEY: /certs/client-private-key.pem

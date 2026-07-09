@@ -35,10 +35,7 @@ env:
 #  NSI_AMISS_PRIVATE_KEY: "amiss-private-key.pem"
 #  CA_CERTIFICATES:
 #  VERIFY_REQUESTS: "True"
-#  DATABASE_URI: "sqlite:///db/amiss.db"
-#  SEED_DUMMY_SEGMENTS_DATA: "False"
 #  STATIC_DIRECTORY: "static"
-#  SQL_LOGGING: "False"
 #  LOG_LEVEL: "INFO"
 
 # This section builds out the service account more information can be found here: https://kubernetes.io/docs/concepts/security/service-accounts/
@@ -164,18 +161,6 @@ autoscaling:
   maxReplicas: 100
   targetCPUUtilizationPercentage: 80
   # targetMemoryUtilizationPercentage: 80
-
-# Persistent Volume Claim for the database.
-# Disabled by default: the default DATABASE_URI is ephemeral in-memory SQLite, so nothing needs a volume.
-# To actually persist, set enabled: true AND add a matching volumeMounts entry (e.g. mountPath: /db)
-# AND point DATABASE_URI at it (e.g. sqlite:///db/amiss.db) or use a PostgreSQL DATABASE_URI instead.
-persistence:
-  enabled: false
-  name: db
-  annotations: {}
-  accessModes:
-    - ReadWriteOnce
-  size: 1Gi
 
 secretProviderClass:
   enabled: false

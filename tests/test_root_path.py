@@ -20,10 +20,31 @@ including FastUI prebuilt_html parameters for the React SPA and that
 image paths, form submit URLs, and search URLs are correctly prefixed.
 """
 
+from contextlib import ExitStack
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
 from amiss.settings import Settings
+
+_DASHBOARD_FETCHES = (
+    "fetch_circuits",
+    "fetch_stp_subscriptions",
+    "fetch_sdp_subscriptions",
+    "fetch_dds_stps",
+    "fetch_dds_sdps",
+    "fetch_agg_circuits",
+)
+
+
+@pytest.fixture(autouse=True)
+def _stub_dashboard_sources():
+    """The landing dashboard fetches WFO/DDS/aggregator live; stub those so `/` renders without network calls."""
+    with ExitStack() as stack:
+        for fetch in _DASHBOARD_FETCHES:
+            stack.enter_context(patch(f"amiss.frontend.home.{fetch}", return_value=[]))
+        yield
 
 
 @pytest.fixture()
@@ -99,13 +120,13 @@ class TestRootPathRoutes:
         The fix is to NOT set root_path on the FastAPI app.
         """
         client = TestClient(app_with_root_path)
-        resp = client.get("/static/ANA-logo-scaled-ab2.png")
+        resp = client.get("/static/ana-logo-scaled-ab2.png")
         assert resp.status_code == 200
 
     def test_static_files_work_without_root_path(self, test_app):
         """Static files must work in the default (no ROOT_PATH) case."""
         client = TestClient(test_app)
-        resp = client.get("/static/ANA-logo-scaled-ab2.png")
+        resp = client.get("/static/ana-logo-scaled-ab2.png")
         assert resp.status_code == 200
 
 
@@ -172,3 +193,34 @@ class TestRootPathImageUrls:
         assert len(static_srcs) > 0
         for src in static_srcs:
             assert src.startswith("/amiss/static/")
+
+
+class TestRootPathNavUrls:
+    """Navbar/card GoToEvent urls must carry ROOT_PATH, else FastUI navigation drops the prefix."""
+
+    @staticmethod
+    def _internal_urls(resp):
+        # GoToEvent urls that stay in-app (skip the external GitHub footer link)
+        return [url for url in find_values(resp.json(), "url") if url.startswith("/")]
+
+    def test_nav_urls_without_root_path(self, test_app):
+        urls = self._internal_urls(TestClient(test_app).get("/api/"))
+        assert urls and all(not url.startswith("/amiss") for url in urls)
+
+    def test_nav_urls_with_root_path(self, app_with_root_path):
+        urls = self._internal_urls(TestClient(app_with_root_path).get("/api/"))
+        assert urls and all(url.startswith("/amiss/") for url in urls)
+
+
+class TestAuthReloadScript:
+    """The SPA shell injects auth-reload.js (re-login on expired session) with the ROOT_PATH prefix."""
+
+    def test_injected_without_root_path(self, test_app):
+        assert '<script src="/static/auth-reload.js">' in TestClient(test_app).get("/").text
+
+    def test_injected_with_root_path(self, app_with_root_path):
+        assert '<script src="/amiss/static/auth-reload.js">' in TestClient(app_with_root_path).get("/").text
+
+    def test_script_is_served(self, test_app):
+        resp = TestClient(test_app).get("/static/auth-reload.js")
+        assert resp.status_code == 200 and "window.fetch" in resp.text

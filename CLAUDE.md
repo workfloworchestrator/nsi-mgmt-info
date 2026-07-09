@@ -15,10 +15,10 @@ The **NSI Management Information Service** — a FastAPI + FastUI web service th
 uv run --group dev pytest tests/ -v
 
 # Run a single test file
-uv run --group dev pytest tests/test_vlan.py -v
+uv run --group dev pytest tests/sources/test_aggregator.py -v
 
 # Run a specific test
-uv run --group dev pytest tests/ -k "test_free_vlan_ranges"
+uv run --group dev pytest tests/ -k "spectrum"
 
 # Type checking
 uv run --group dev mypy amiss/
@@ -36,17 +36,15 @@ nsi-mgmt-info
 
 ## Architecture
 
-**App initialization** (`amiss/__init__.py`): Creates the FastAPI app, mounts static files at `/static`, registers all routers, starts APScheduler, and defines a catch-all `/{path:path}` route that serves FastUI's prebuilt React SPA HTML. When `SEED_DUMMY_SEGMENTS_DATA` is set, it idempotently seeds dummy `Reservation`/`Segment` rows at startup via `amiss/seed.py` (dev/demo only).
+**App initialization** (`amiss/__init__.py`): Creates the FastAPI app, mounts static files at `/static`, adds the `log_request_time` middleware, registers all routers, injects a small `_BRAND_STYLE` block (teal ANA navbar/background, to match `ana-automation-ui`) into the prebuilt SPA shell, and defines a catch-all `/{path:path}` route that serves FastUI's prebuilt React SPA HTML. There is no database or scheduler — everything is served live per request.
 
-**Frontend** (`amiss/frontend/`): FastAPI routers return FastUI JSON component trees, not HTML. The React SPA (served by `prebuilt_html()`) fetches these JSON responses and renders them client-side. Routes are **read-only**: reservation views (list/detail/log), STP/SDP listings, spectrum, healthcheck. (AMISS can no longer create or modify reservations — there is no NSI control plane.)
+**Live data flow** (`amiss/data.py`, `amiss/sources/`): Routes call `amiss/data.py` (`get_circuits`/`get_stps`/`get_sdps`/`get_spectrum`/`get_circuit_path`), which queries the **WFO orchestrator GraphQL** per request (forwarding the caller's OIDC token) and reconciles STP/SDP subscriptions against the DDS topology. Accessors that need more than one upstream fetch them **concurrently** (`ThreadPoolExecutor`), so a page's wall-clock ≈ the slowest single fetch. No cache — every page is live.
 
-**State machine** (`amiss/fsm.py`): `ConnectionStateMachine` (python-statemachine) with 16 states for the NSI connection lifecycle from `ConnectionNew` through reserve/commit/provision/active/release/terminate to `ConnectionDeleted`. State values are stored in the `Reservation.state` column. The machine is no longer instantiated/driven (AMISS sends no commands) — it is retained for its state `.value` constants and `active_state_values`, used to display and filter reservation state.
+**Performance.** Each page fetches live; the dominant cost is a **fixed ~400–500 ms per WFO GraphQL request** (independent of payload — responses are a few KB, JSON parse ≈ 0), attributable to per-request OIDC token validation + GraphQL/DB setup at the orchestrator, so one WFO round-trip is the per-page floor. The `log_request_time` middleware in `__init__.py` logs `elapsed_ms` per request at **DEBUG**. See README **Performance** for improvement directions (biggest: cache token validation orchestrator-side; AMISS-side: batch the dashboard's three WFO queries into one aliased request).
 
-**Background jobs** (`amiss/job.py`): APScheduler with ThreadPoolExecutor (10 workers). `nsi_poll_sources` is scheduled every minute and calls `nsi_poll_dds_job` then `nsi_poll_agg_job` (DDS first, so STPs/SDPs exist before reservations resolve against them). `nsi_poll_dds_job` wipes the `STP`/`SDP` tables and repopulates them from the **DDS proxy** (`GET /service-termination-points` and `/service-demarcation-points`), setting `isSdpMember=True` on SDP-member STPs. `nsi_poll_agg_job` fetches reservations from the aggregator proxy; it **temporarily** rebuilds the `Reservation` table from them (`temp_pull_reservations_from_agg` — a stopgap until reservations are sourced from the WFO, the Source of Truth) and then upserts their `Segment`s into the DB.
+**Frontend** (`amiss/frontend/`): FastAPI routers return FastUI JSON component trees, not HTML. The React SPA (served by `prebuilt_html()`) fetches these JSON responses and renders them client-side. Routes are **read-only**: `/` (`home.py`) is a summary **dashboard** that fetches each upstream once, concurrently, and composes its cards from the shared results via the same pure builders the pages use (no duplicate WFO queries); `/circuits` (`circuits.py`) is a list with four **state tabs** — Activated / Failed / Terminated / All (bucketed by `circuit_state_bucket(vc.state)`) — plus a live-refetched detail by subscription id that also shows the aggregator **path** segments (`get_circuit_path`); `/stp`, `/sdp` are single WFO-vs-DDS reconciliation views with server-side `?sort=`; `/spectrum` (`spectrum.py`) lists the SDPs with the circuits crossing each (WFO SDP subscriptions + aggregator-proxy paths) with a per-SDP drill-in; `/healthcheck` rounds it out. A source failure renders a warning banner rather than a misleading table.
 
-**NSI integration** (`amiss/nsi.py`, `amiss/dds.py`): mutual-TLS HTTP to the proxies. `nsi.py` is now just the JSON `GET` helper (`nsi_util_get_json`) used by the proxy pollers — AMISS no longer sends NSI SOAP commands and has no inbound provider callback. `dds.py` fetches and parses STP/SDP data from the **nsi-dds-proxy** JSON API (`get_dds_proxy_stps`/`get_dds_proxy_sdps` + `dds_proxy_json_to_stps`/`dds_proxy_json_to_sdps`).
-
-**Database** (`amiss/db.py`, `amiss/model.py`): SQLModel ORM. Defaults to a shared **in-memory** SQLite database (`sqlite:///file::memory:?cache=shared&uri=true`, ephemeral — no persistence; `db.py` uses a `StaticPool` + `check_same_thread=False` for in-memory SQLite so the DB survives across the APScheduler/FastAPI threads). File-based SQLite or PostgreSQL via `DATABASE_URI`. Table models: `STP` (network endpoints; `isSdpMember` marks those that are part of an SDP), `SDP` (demarcation points connecting two STPs via `stpA`/`stpZ`), `Reservation` (connection requests with state machine; references source/dest `STP` and links many-to-many to `SDP`), `ReservationSDPLink` (the Reservation↔SDP association table), `Segment` (a path segment of an NSI P2P circuit shaped after the nsi-aggregator-proxy API; child of a `Reservation` via the `reservation_id` FK, parsed and upserted in `amiss/agg.py`), `Log` (audit trail).
+**NSI integration** (`amiss/nsi.py`, `amiss/dds.py`, `amiss/sources/`): `nsi.py` is the JSON `GET`/POST helper set (`nsi_util_get_json`, plus the WFO client in `sources/wfo.py`). `sources/wfo.py` queries the WFO GraphQL (`<NSI_AMISS_WFO_URL>/api/graphql`, Bearer token) and maps MDP2P/STP/SDP subscriptions to render DTOs; `sources/dds_topology.py` reads the DDS proxy topology (reusing `amiss/dds.py`) as reconciliation DTOs; `sources/reconcile.py` diffs the two (IN_BOTH / DDS_ONLY / MISSING_IN_DDS); `sources/aggregator.py` fetches circuit paths from the aggregator proxy (`GET /reservations?detail=full` via `nsi_util_get_json`, same mTLS identity as the DDS proxy) and `build_spectrum()` groups circuits under the SDP they cross (subset of touched STPs).
 
 **Static files packaging**: `pyproject.toml` uses `[tool.setuptools.data-files]` to install static assets to `share/amiss/static/` in the wheel. The Dockerfile sets `STATIC_DIRECTORY=/usr/local/share/amiss/static` to point to the installed location.
 
@@ -56,18 +54,21 @@ When deployed behind a reverse-proxy portal, the app is served at path prefix `/
 
 **Do NOT set `FastAPI(root_path=...)`**. Starlette's `get_route_path()` assumes `scope["path"]` contains `root_path` as a prefix. When the proxy already stripped the prefix, this causes StaticFiles to double-count the mount path (looking up `static/static/file.png`), resulting in 404s.
 
-Instead, `settings.ROOT_PATH` is used only for URL prefixing in templates and forms:
+Instead, `settings.ROOT_PATH` is applied explicitly to every URL the frontend emits, via the
+`root_url(path)` helper in `amiss/frontend/util.py`. FastUI's `api_path_strip` expects the browser
+path to **keep** the prefix (it strips it only for the API fetch), so a bare `GoToEvent(url="/x")`
+would navigate the browser to `/x` and drop the `/amiss`. Everything internal must be prefixed:
 - `prebuilt_html(api_root_url=..., api_path_strip=...)` in the catch-all route
-- Image `src` attributes via `amiss/frontend/util.py`
-- Form submit and search URLs in `amiss/frontend/reservations.py`
+- every `GoToEvent(url=...)` (navbar title + links, dashboard cards, tabs, table row/detail links,
+  Back buttons) and each navbar/tab `active` matcher
+- `sort_form` `submit_url`s and image `src` attributes
+
+`root_url` is a no-op when `ROOT_PATH` is empty (local/dev). External links (e.g. the GitHub footer)
+are left absolute.
 
 ## Testing
 
-The test setup in `conftest.py` has important ordering constraints:
-- `DATABASE_URI` is set to `sqlite://` (in-memory) **before any amiss imports** because `Settings` validates `FilePath` fields at import time
-- Dummy PEM files (`amiss-certificate.pem`, `amiss-private-key.pem`) are created before imports for the same reason
-- `DatabaseLogHandler` is removed from all loggers to prevent DB writes during tests
-- Each test gets its own DB session with automatic rollback via a transaction wrapper
+The test setup in `conftest.py` creates dummy PEM files (`amiss-certificate.pem`, `amiss-private-key.pem`) **before any amiss imports**, because `Settings` validates its `FilePath` fields at import time. Upstreams are mocked per test (`unittest.mock.patch` for units; the `responses` library for the integration stack in `tests/integration/`).
 
 ## Code style
 

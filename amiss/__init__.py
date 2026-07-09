@@ -12,48 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from datetime import UTC, datetime, timedelta
+import time
+from collections.abc import Awaitable, Callable
 
-from apscheduler.triggers.interval import IntervalTrigger
+import structlog
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastui import prebuilt_html
-from starlette.responses import HTMLResponse, PlainTextResponse
+from starlette.requests import Request
+from starlette.responses import HTMLResponse, PlainTextResponse, Response
 
+from amiss.frontend.circuits import router as circuits_router
 from amiss.frontend.healthcheck import router as healthcheck_router
 from amiss.frontend.home import router as home_router
-from amiss.frontend.reservations import router as reservations_router
 from amiss.frontend.sdp import router as sdp_router
 from amiss.frontend.spectrum import router as spectrum_router
 from amiss.frontend.stp import router as stp_router
-from amiss.job import nsi_poll_sources, scheduler
 from amiss.log import init as log_init
-from amiss.seed import seed
 from amiss.settings import settings
 
 #
 # logging
 #
 log_init()
-
-#
-# dummy data seeding (dev/demo only)
-#
-if settings.SEED_DUMMY_SEGMENTS_DATA:
-    seed()
-
-#
-# scheduler
-#
-scheduler.start()
-# poll all upstream sources every minute starting on the next whole minute and do not let jobs queue up
-scheduler.add_job(
-    nsi_poll_sources,
-    trigger=IntervalTrigger(
-        minutes=1, start_date=datetime.now(UTC).replace(second=0, microsecond=0) + timedelta(minutes=1)
-    ),
-    coalesce=True,
-)
+logger = structlog.get_logger(__name__)
 
 #
 # application
@@ -64,9 +46,19 @@ app = FastAPI()
 # and put the css and js files inside a subfolder called 'assets'
 app.mount("/static", StaticFiles(directory=settings.STATIC_DIRECTORY), name="static")
 
+
+@app.middleware("http")
+async def log_request_time(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    """Log wall-clock time per request (DEBUG) so page build latency is visible when profiling."""
+    start = time.perf_counter()
+    response = await call_next(request)
+    logger.debug("request", path=request.url.path, elapsed_ms=round((time.perf_counter() - start) * 1000, 1))
+    return response
+
+
 # include routes
 app.include_router(healthcheck_router)
-app.include_router(reservations_router, prefix="/api/reservations")
+app.include_router(circuits_router, prefix="/api/circuits")
 app.include_router(stp_router, prefix="/api/stp")
 app.include_router(sdp_router, prefix="/api/sdp")
 
@@ -84,10 +76,28 @@ async def favicon_ico() -> str:
     return "page not found"
 
 
+# Minimal brand styling to match the ANA portal (ana-automation-ui): teal navbar, light background,
+# system font. FastUI's prebuilt page has no CSS hook and injects Bootstrap into <head> at runtime,
+# so this is appended at the end of <body> (later in document order) with !important to win the cascade.
+_BRAND_STYLE = """
+<style>
+  body { background-color: #f5f7fa !important;
+         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }
+  .navbar { background-color: #2a5c5c !important; border-bottom: none !important; }
+  .navbar .navbar-brand, .navbar .nav-link { color: #ffffff !important; }
+  .navbar .nav-link.active { color: #57e0c4 !important; font-weight: 600 !important; }
+  a, a:hover { color: #2a5c5c; }
+</style>
+"""
+
+
 @app.get("/{path:path}")
 async def html_landing() -> HTMLResponse:
     kwargs: dict = {"title": settings.SITE_TITLE}
     if settings.ROOT_PATH:
         kwargs["api_root_url"] = f"{settings.ROOT_PATH}/api"
         kwargs["api_path_strip"] = settings.ROOT_PATH
-    return HTMLResponse(prebuilt_html(**kwargs))
+    # auth-reload.js wraps window.fetch to full-page-reload on an expired-session redirect (re-login);
+    # plain (non-deferred) script so it wraps fetch before the FastUI bundle's first post-mount call.
+    tail = f'{_BRAND_STYLE}<script src="{settings.ROOT_PATH}/static/auth-reload.js"></script></body>'
+    return HTMLResponse(prebuilt_html(**kwargs).replace("</body>", tail))
