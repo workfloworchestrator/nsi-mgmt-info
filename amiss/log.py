@@ -36,22 +36,10 @@ class UvicornAccessLogFilter(Filter):
 def init() -> None:
     timestamper = structlog.processors.TimeStamper(fmt="iso")
     pre_chain = [
-        # Add the log level and a timestamp to the event_dict if the log entry
-        # is not from structlog.
+        # add the log level and a timestamp to non-structlog log entries
         structlog.stdlib.add_log_level,
-        # Add extra attributes of LogRecord objects to the event dictionary
-        # so that values passed in the extra parameter of log methods pass
-        # through to log output.
-        # structlog.stdlib.ExtraAdder(), # disabled to remove color_message= from uvicorn logs
         timestamper,
     ]
-
-    # def extract_from_record(_, __, event_dict):
-    #     """Extract thread and process names and add them to the event dict."""
-    #     record = event_dict["_record"]
-    #     event_dict["thread_name"] = record.threadName
-    #     event_dict["process_name"] = record.processName
-    #     return event_dict
 
     config.dictConfig(
         {
@@ -69,7 +57,6 @@ def init() -> None:
                 "colored": {
                     "()": structlog.stdlib.ProcessorFormatter,
                     "processors": [
-                        # extract_from_record,
                         structlog.stdlib.ProcessorFormatter.remove_processors_meta,
                         structlog.dev.ConsoleRenderer(colors=True),
                     ],
@@ -112,9 +99,6 @@ def init() -> None:
     uvicorn_access_logger = getLogger("uvicorn.access")
     uvicorn_access_logger.addFilter(UvicornAccessLogFilter())
 
-    # logging.getLogger("uvicorn.error").disabled = True
-    # logging.getLogger("uvicorn.access").disabled = True
-
     structlog.configure(
         processors=[
             structlog.stdlib.add_log_level,
@@ -122,7 +106,6 @@ def init() -> None:
             structlog.stdlib.PositionalArgumentsFormatter(),
             timestamper,
             structlog.processors.StackInfoRenderer(),
-            # structlog.processors.format_exc_info,  # structlog.dev.ConsoleRenderer now formats exceptions itself
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         logger_factory=structlog.stdlib.LoggerFactory(),

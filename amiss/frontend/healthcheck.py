@@ -20,8 +20,5 @@ router = APIRouter()
 
 @router.get("/healthcheck")
 def healthcheck() -> JSONResponse:
-    """Application health check endpoint.
-
-    Access to this endpoint is filtered through
-    """
+    """Liveness/readiness probe returning JSON; its access logs are filtered out (see UvicornAccessLogFilter)."""
     return JSONResponse(content={"status": "healthy"}, status_code=200)

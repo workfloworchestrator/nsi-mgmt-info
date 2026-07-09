@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Fetch the DDS-proxy topology as plain reconciliation DTOs (no database writes).
+"""Fetch the DDS-proxy topology as plain reconciliation DTOs.
 
-This is the read-only counterpart to amiss/dds.py's poller helpers: it maps the DDS proxy JSON into
-``DdsStp``/``DdsSdp`` for live reconciliation against the WFO. Each fetch returns ``None`` on failure
-so the reconciler can tell a failed source apart from an empty one.
+Uses amiss/dds.py's proxy fetch helpers to map the DDS proxy JSON into ``DdsStp``/``DdsSdp`` for live
+reconciliation against the WFO. Each fetch returns ``None`` on failure so the reconciler can tell a
+failed source apart from an empty one.
 """
 
 import json

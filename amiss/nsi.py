@@ -64,15 +64,7 @@ def nsi_util_get_json(url: HttpUrl, queryparams: dict) -> bytes | None:
 
     log.debug("SENDING HTTP REQUEST FOR JSON", url=str(url))
     try:
-        # Append queries to URL, assume caller did proper escaping.
-        fullurl = str(url)
-        if len(queryparams) > 0:
-            fullurl += "?"
-        for k, v in queryparams.items():
-            qstr = str(k) + "=" + str(v)
-            fullurl += "&" + qstr
-
-        r = session.get(fullurl, timeout=REQUEST_TIMEOUT, **_request_auth_kwargs())
+        r = session.get(str(url), params=queryparams, timeout=REQUEST_TIMEOUT, **_request_auth_kwargs())
     except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
         log.warning("cannot get JSON document", url=str(url), error=str(e))
         return None
