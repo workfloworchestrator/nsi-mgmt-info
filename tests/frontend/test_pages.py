@@ -14,6 +14,7 @@
 
 """Render tests for the circuits/STP/SDP pages: FastUI must serialize the DTO tables (mocked data)."""
 
+from contextlib import ExitStack
 from unittest.mock import patch
 
 import pytest
@@ -22,6 +23,7 @@ from fastapi.testclient import TestClient
 from amiss import app
 from amiss.frontend.circuits import _in_tab
 from amiss.frontend.home import Tone, _stat_line
+from amiss.sources.aggregator import CircuitOnSdp, PathSegment, SpectrumRow, SpectrumView
 from amiss.sources.reconcile import ReconcileStatus, SdpReconciliation, SdpRow, StpReconciliation, StpRow
 from amiss.sources.wfo import CircuitRow
 
@@ -60,12 +62,13 @@ def test_in_tab(state, tab, expected):
     assert _in_tab(CircuitRow(subscription_id="x", state=state), tab) is expected
 
 
-def _patch_dashboard_sources(circuits=None, stps=None, sdps=None):
+def _patch_dashboard_sources(circuits=None, stps=None, sdps=None, spectrum=None):
     """Patch the dashboard's live sources so the landing page renders without network calls."""
     return (
         patch("amiss.frontend.home.get_circuits", return_value=circuits if circuits is not None else []),
         patch("amiss.frontend.home.get_stps", return_value=stps or StpReconciliation(rows=[])),
         patch("amiss.frontend.home.get_sdps", return_value=sdps or SdpReconciliation(rows=[])),
+        patch("amiss.frontend.home.get_spectrum", return_value=spectrum or SpectrumView(rows=[])),
     )
 
 
@@ -79,19 +82,24 @@ def test_landing_page_injects_brand_style():
 def test_dashboard_shows_summary_cards():
     circuits = [CircuitRow(subscription_id="a", state="ACTIVATED"), CircuitRow(subscription_id="b", state="FAILED")]
     stps = StpReconciliation(rows=[StpRow(stp_id="x", status=ReconcileStatus.IN_BOTH)])
-    p_circuits, p_stps, p_sdps = _patch_dashboard_sources(circuits=circuits, stps=stps)
-    with p_circuits, p_stps, p_sdps:
+    spectrum = SpectrumView(
+        rows=[SpectrumRow(subscription_id="d1", sdp_name="A<->B", stp_a="a", stp_z="b", circuit_count=1)]
+    )
+    with ExitStack() as stack:
+        for p in _patch_dashboard_sources(circuits=circuits, stps=stps, spectrum=spectrum):
+            stack.enter_context(p)
         response = client.get("/api/")  # the dashboard component tree (the SPA fetches this)
     assert response.status_code == 200
-    # circuit card with state breakdown, reconciliation card, and the spectrum link card
+    # circuit card with state breakdown, reconciliation card, and the spectrum counts card
     assert "Circuits" in response.text and "Activated" in response.text
     assert "Termination Points" in response.text and "backed by DDS" in response.text
-    assert "Spectrum" in response.text
+    assert "Spectrum" in response.text and "SDPs in use" in response.text
 
 
 def test_dashboard_card_shows_unavailable_on_source_failure():
-    p_circuits, p_stps, p_sdps = _patch_dashboard_sources(stps=StpReconciliation(error="STP source down"))
-    with p_circuits, p_stps, p_sdps:
+    with ExitStack() as stack:
+        for p in _patch_dashboard_sources(stps=StpReconciliation(error="STP source down")):
+            stack.enter_context(p)
         response = client.get("/api/")
     assert response.status_code == 200
     assert "unavailable" in response.text
@@ -149,6 +157,31 @@ def test_circuit_detail_renders():
     assert "circuit one" in response.text
 
 
+def test_circuit_detail_shows_path_segments():
+    rows = [CircuitRow(subscription_id="sub-1", description="c", connection_id="conn-1")]
+    segments = [
+        PathSegment(order=0, provider_nsa="nsa-a", source_stp="a", dest_stp="b", capacity=1000, status="ACTIVATED")
+    ]
+    with (
+        patch("amiss.frontend.circuits.get_circuits", return_value=rows),
+        patch("amiss.frontend.circuits.get_circuit_path", return_value=segments),
+    ):
+        response = client.get("/api/circuits/sub-1/")
+    assert response.status_code == 200
+    assert "Path" in response.text and "nsa-a" in response.text
+
+
+def test_circuit_detail_path_unavailable():
+    rows = [CircuitRow(subscription_id="sub-1", connection_id="conn-1")]
+    with (
+        patch("amiss.frontend.circuits.get_circuits", return_value=rows),
+        patch("amiss.frontend.circuits.get_circuit_path", return_value=None),
+    ):
+        response = client.get("/api/circuits/sub-1/")
+    assert response.status_code == 200
+    assert "Path unavailable" in response.text
+
+
 def test_circuit_detail_not_found():
     with patch("amiss.frontend.circuits.get_circuits", return_value=[]):
         response = client.get("/api/circuits/does-not-exist/")
@@ -161,10 +194,61 @@ def test_dashboard_circuit_card_unavailable_when_wfo_unreachable():
         patch("amiss.frontend.home.get_circuits", return_value=None),
         patch("amiss.frontend.home.get_stps", return_value=StpReconciliation(rows=[])),
         patch("amiss.frontend.home.get_sdps", return_value=SdpReconciliation(rows=[])),
+        patch("amiss.frontend.home.get_spectrum", return_value=SpectrumView(rows=[])),
     ):
         response = client.get("/api/")
     assert response.status_code == 200
     assert "unavailable" in response.text
+
+
+_SDP = SpectrumRow(
+    subscription_id="d1",
+    sdp_name="A<->B",
+    stp_a="dom:portA",
+    stp_z="dom:portB",
+    circuit_count=1,
+    total_capacity=1000,
+    circuits=[
+        CircuitOnSdp(
+            subscription_id="sub-1",
+            description="AMS-NYC",
+            connection_id="conn-1",
+            vlan="100",
+            capacity=1000,
+            status="ACTIVATED",
+        )
+    ],
+)
+
+
+def test_spectrum_page_renders():
+    with patch("amiss.frontend.spectrum.get_spectrum", return_value=SpectrumView(rows=[_SDP])):
+        response = client.get("/api/spectrum")
+    assert response.status_code == 200
+    assert "A<->B" in response.text and "dom:portA" in response.text
+
+
+def test_spectrum_detail_shows_circuits_on_sdp():
+    with patch("amiss.frontend.spectrum.get_spectrum", return_value=SpectrumView(rows=[_SDP])):
+        response = client.get("/api/spectrum/d1/")
+    assert response.status_code == 200
+    assert "AMS-NYC" in response.text and "conn-1" in response.text
+    # cross-link to the circuit detail (FastUI stores the per-row URL template)
+    assert "/circuits/{subscription_id}/" in response.text
+
+
+def test_spectrum_detail_not_found():
+    with patch("amiss.frontend.spectrum.get_spectrum", return_value=SpectrumView(rows=[])):
+        response = client.get("/api/spectrum/nope/")
+    assert response.status_code == 200
+    assert "No SDP with id" in response.text
+
+
+def test_spectrum_page_shows_error_when_unreachable():
+    with patch("amiss.frontend.spectrum.get_spectrum", return_value=SpectrumView(error="down")):
+        response = client.get("/api/spectrum")
+    assert response.status_code == 200
+    assert "unavailable" in response.text.lower()
 
 
 @pytest.mark.parametrize(

@@ -26,16 +26,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from amiss.settings import Settings
+from amiss.sources.aggregator import SpectrumView
 from amiss.sources.reconcile import SdpReconciliation, StpReconciliation
 
 
 @pytest.fixture(autouse=True)
 def _stub_dashboard_sources():
-    """The landing dashboard fetches WFO/DDS live; stub those so `/` renders without network calls."""
+    """The landing dashboard fetches WFO/DDS/aggregator live; stub those so `/` renders without network calls."""
     with (
         patch("amiss.frontend.home.get_circuits", return_value=[]),
         patch("amiss.frontend.home.get_stps", return_value=StpReconciliation(rows=[])),
         patch("amiss.frontend.home.get_sdps", return_value=SdpReconciliation(rows=[])),
+        patch("amiss.frontend.home.get_spectrum", return_value=SpectrumView(rows=[])),
     ):
         yield
 

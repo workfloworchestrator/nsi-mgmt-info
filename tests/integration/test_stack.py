@@ -31,6 +31,7 @@ client = TestClient(app)
 
 WFO_GRAPHQL = "http://orchestrator.domain.example/api/graphql"
 DDS = "http://dds.domain.example/dds"
+AGG = "http://aggregator-proxy.domain.example"
 
 # --- Upstream payloads (typed WFO shape + DDS-proxy topology) --------------------------------------
 
@@ -78,6 +79,23 @@ DDS_SDPS = [
     {"stpAId": "urn:ogf:network:port-c", "stpZId": "urn:ogf:network:port-d"},  # DDS only
 ]
 
+# Aggregator path for conn-1: its middle segment crosses the d1 SDP (port-a <-> port-b).
+AGG_RESERVATIONS = {
+    "reservations": [
+        {
+            "connectionId": "conn-1",
+            "description": "AMS-NYC",
+            "criteria": {"p2ps": {"capacity": 10}},
+            "status": "ACTIVATED",
+            "segments": [
+                {"order": 0, "sourceSTP": "edge-1", "destSTP": "port-a?vlan=100"},
+                {"order": 1, "sourceSTP": "port-a?vlan=100", "destSTP": "port-b?vlan=100"},
+                {"order": 2, "sourceSTP": "port-b?vlan=100", "destSTP": "edge-2"},
+            ],
+        }
+    ]
+}
+
 
 def _wfo_callback(request):
     """Route the single /api/graphql endpoint to a payload based on the query's tag filter."""
@@ -95,6 +113,7 @@ def upstreams(monkeypatch):
         mock.add_callback(responses.POST, WFO_GRAPHQL, callback=_wfo_callback, content_type="application/json")
         mock.add(responses.GET, f"{DDS}/service-termination-points", json=DDS_STPS, content_type="application/json")
         mock.add(responses.GET, f"{DDS}/service-demarcation-points", json=DDS_SDPS, content_type="application/json")
+        mock.add(responses.GET, f"{AGG}/reservations", json=AGG_RESERVATIONS, content_type="application/json")
         yield
 
 
@@ -128,8 +147,16 @@ def test_sdp_reconciliation():
 
 
 @pytest.mark.usefixtures("upstreams")
+def test_spectrum_groups_circuit_under_crossed_sdp():
+    response = _get("/api/spectrum")
+    assert response.status_code == 200
+    assert "A<->B" in response.text  # the WFO SDP name for the d1 link the circuit crosses
+
+
+@pytest.mark.usefixtures("upstreams")
 def test_dashboard_aggregates_all_sources():
     response = _get("/api/")
     assert response.status_code == 200
     assert "Circuits" in response.text
     assert "Termination Points" in response.text and "backed by DDS" in response.text
+    assert "Spectrum" in response.text and "SDPs in use" in response.text
