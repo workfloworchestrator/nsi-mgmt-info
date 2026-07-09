@@ -162,15 +162,14 @@ def circuit_table(circuits: list[CircuitRow]) -> c.Table:
         data_model=CircuitRow,
         data=circuits,
         columns=[
-            DisplayLookup(field="subscription_id", on_click=GoToEvent(url=root_url("/circuits/{subscription_id}/"))),
+            DisplayLookup(
+                field="short_id", title="ID", on_click=GoToEvent(url=root_url("/circuits/{subscription_id}/"))
+            ),
             DisplayLookup(field="description"),
             DisplayLookup(field="start_time"),
-            DisplayLookup(field="end_time"),
-            DisplayLookup(field="source_stp"),
-            DisplayLookup(field="source_vlan"),
-            DisplayLookup(field="dest_stp"),
-            DisplayLookup(field="dest_vlan"),
-            DisplayLookup(field="bandwidth"),
+            DisplayLookup(field="source", title="Source"),
+            DisplayLookup(field="dest", title="Destination"),
+            DisplayLookup(field="bandwidth", title="BW"),
             DisplayLookup(field="state"),
             DisplayLookup(field="created_by"),
         ],

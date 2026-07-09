@@ -73,13 +73,16 @@ class CircuitRow(BaseModel):
     """A circuit row rendered in /circuits, built live from an MDP2P subscription."""
 
     subscription_id: str
+    short_id: str | None = None  # first 8 chars of subscription_id, shown in the list; full id on detail
     description: str | None = None
-    start_time: datetime | None = None
-    end_time: datetime | None = None
+    start_time: str | None = None  # 'YYYY-MM-DD HH:MM:SS' (compact, wraps on the space)
+    end_time: str | None = None
     source_stp: str | None = None
     source_vlan: str | None = None
     dest_stp: str | None = None
     dest_vlan: str | None = None
+    source: str | None = None  # 'stp (vlan N)' for the compact list; raw stp/vlan (above) shown on detail
+    dest: str | None = None
     bandwidth: int | None = None
     state: str | None = None
     created_by: str | None = None
@@ -187,21 +190,42 @@ def _endpoint(saps: list[dict], index: int) -> tuple[str | None, str | None]:
     return (stp.get("stpName") or stp.get("stpId")), sap.get("vlan")
 
 
+def _endpoint_label(stp: str | None, vlan: str | None) -> str | None:
+    """Combine an endpoint's STP and VLAN into one compact cell, e.g. 'Port A (vlan 100)'."""
+    if not stp:
+        return None
+    return f"{stp} (vlan {vlan})" if vlan else stp
+
+
+def _format_ts(value: str | None) -> str | None:
+    """Format an ISO timestamp as 'YYYY-MM-DD HH:MM:SS' (drop microseconds/timezone) for compact display."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value).strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        return value
+
+
 def _map_circuit(sub: dict) -> CircuitRow:
     vc = sub.get("vc") or {}
     saps = vc.get("saps") or []
     # saps[0]=source, saps[1]=dest is the create-workflow convention (create_mdp2p.py).
     source_stp, source_vlan = _endpoint(saps, 0)
     dest_stp, dest_vlan = _endpoint(saps, 1)
+    subscription_id = sub["subscriptionId"]
     return CircuitRow(
-        subscription_id=sub["subscriptionId"],
+        subscription_id=subscription_id,
+        short_id=subscription_id[:8],
         description=vc.get("circuitDescription") or sub.get("description"),
-        start_time=sub.get("startDate"),
-        end_time=sub.get("endDate"),
+        start_time=_format_ts(sub.get("startDate")),
+        end_time=_format_ts(sub.get("endDate")),
         source_stp=source_stp,
         source_vlan=source_vlan,
         dest_stp=dest_stp,
         dest_vlan=dest_vlan,
+        source=_endpoint_label(source_stp, source_vlan),
+        dest=_endpoint_label(dest_stp, dest_vlan),
         bandwidth=vc.get("serviceSpeed"),
         state=vc.get("state") or sub.get("status"),
         created_by=_created_by(sub),

@@ -78,6 +78,8 @@ class TestMapCircuit:
                     "source_vlan": "100",
                     "dest_stp": "Port Z",
                     "dest_vlan": "200",
+                    "source": "Port A (vlan 100)",  # merged stp+vlan for the compact list
+                    "dest": "Port Z (vlan 200)",
                     "bandwidth": 1000,
                     "state": "ACTIVE",
                     "created_by": "alice",
@@ -106,6 +108,8 @@ class TestMapCircuit:
                     "source_vlan": "300",
                     "dest_stp": None,  # only one SAP
                     "dest_vlan": None,
+                    "source": "urn:ogf:network:a (vlan 300)",
+                    "dest": None,  # only one SAP -> no destination label
                     "created_by": "bob",  # no completed CREATE -> first CREATE
                 },
                 id="partial-one-sap",
@@ -117,10 +121,15 @@ class TestMapCircuit:
         for field, value in expected.items():
             assert getattr(row, field) == value
 
-    def test_parses_dates(self):
+    def test_formats_dates_compactly(self):
+        # ISO with T/offset -> 'YYYY-MM-DD HH:MM:SS' (no T, no microseconds/timezone)
         row = wfo._map_circuit(TERMINATED_SUBSCRIPTION)
-        assert row.start_time.year == 2026 and row.start_time.month == 6
-        assert row.end_time.day == 15
+        assert row.start_time == "2026-06-01 00:00:00"
+        assert row.end_time == "2026-06-15 00:00:00"
+
+    def test_short_id_is_first_8_chars(self):
+        row = wfo._map_circuit({"subscriptionId": "abcdef12-3456-7890-abcd-ef1234567890"})
+        assert row.short_id == "abcdef12" and row.subscription_id == "abcdef12-3456-7890-abcd-ef1234567890"
 
 
 class TestCreatedBy:

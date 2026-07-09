@@ -126,8 +126,9 @@ def _get(path: str):
 def test_circuits_render_from_wfo():
     response = _get("/api/circuits")
     assert response.status_code == 200
-    # source/dest STP names from vc.saps, and the creator from the CREATE process
-    assert "Port A" in response.text and "Port Z" in response.text and "alice" in response.text
+    # merged source/dest (stp + vlan) from vc.saps, and the creator from the CREATE process
+    assert "Port A (vlan 100)" in response.text and "Port Z (vlan 200)" in response.text
+    assert "alice" in response.text
 
 
 @pytest.mark.usefixtures("upstreams")

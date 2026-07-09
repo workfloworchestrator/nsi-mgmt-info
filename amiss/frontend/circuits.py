@@ -17,6 +17,7 @@ from enum import Enum
 from fastapi import APIRouter
 from fastui import AnyComponent, FastUI
 from fastui import components as c
+from fastui.components.display import DisplayLookup
 from fastui.events import GoToEvent
 from pydantic import BaseModel, Field
 from starlette.requests import Request
@@ -43,8 +44,8 @@ class CircuitSort(str, Enum):
     state = "state"
     description = "description"
     start_time = "start_time"
-    source_stp = "source_stp"
-    dest_stp = "dest_stp"
+    source = "source"
+    dest = "dest"
     created_by = "created_by"
 
 
@@ -146,9 +147,13 @@ def circuit_details(request: Request, subscription_id: str) -> list[AnyComponent
     if circuit is None:
         return app_page(title=f"No circuit with id {subscription_id}.")
     path = get_circuit_path(circuit.connection_id) if circuit.connection_id else []
+    # detail shows every field except the list-only helpers (short_id, and the merged source/dest —
+    # the raw source_stp/source_vlan/dest_stp/dest_vlan are shown instead)
+    list_only = {"short_id", "source", "dest"}
+    detail_fields = [DisplayLookup(field=name) for name in CircuitRow.model_fields if name not in list_only]
     return app_page(
         button_row([c.Button(text="Back", on_click=GoToEvent(url=root_url("/circuits")), class_name="+ ms-2")]),
-        c.Details(data=circuit),
+        c.Details(data=circuit, fields=detail_fields),
         c.Heading(text="Path", level=4),
         _path_section(path),
         title=f"Circuit {circuit.description}",
