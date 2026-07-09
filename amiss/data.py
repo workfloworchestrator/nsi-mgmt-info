@@ -85,7 +85,7 @@ def get_circuit_path(connection_id: str | None) -> list[PathSegment] | None:
     The aggregator uses AMISS's proxy identity (no user token). ``None`` distinguishes "aggregator down"
     from ``[]`` ("no matching reservation / no segments") so the detail page can word the two differently.
     """
-    # ponytail: reuse the list fetch and filter; switch to GET /reservations/{id} if this page gets hot.
+    # Reuse the list fetch and filter; switch to GET /reservations/{id} if this page gets hot.
     try:
         circuits = fetch_agg_circuits()
         if circuits is None:
