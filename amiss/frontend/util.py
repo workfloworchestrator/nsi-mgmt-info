@@ -20,8 +20,8 @@ from fastui.events import GoToEvent
 from pydantic import BaseModel
 from starlette.requests import Request
 
-from amiss.model import SDP, Segment
 from amiss.settings import settings
+from amiss.sources.aggregator import CircuitOnSdp, PathSegment, SpectrumRow
 from amiss.sources.reconcile import SdpRow, StpRow
 from amiss.sources.wfo import CircuitRow
 
@@ -53,7 +53,7 @@ def app_page(*components: AnyComponent, title: str | None = None) -> list[AnyCom
                 ),
                 c.Link(
                     components=[c.Text(text="Spectrum")],
-                    on_click=GoToEvent(url="/spectrum/active"),
+                    on_click=GoToEvent(url="/spectrum"),
                     active="startswith:/spectrum",
                 ),
             ],
@@ -198,30 +198,47 @@ def sdp_table(sdps: list[SdpRow]) -> c.Table:
     )
 
 
-def spectrum_table(sdps: list[SDP]) -> c.Table:
+def spectrum_sdp_table(rows: list[SpectrumRow]) -> c.Table:
     return c.Table(
-        data_model=SDP,
-        data=sdps,
+        data_model=SpectrumRow,
+        data=rows,
         columns=[
-            DisplayLookup(field="id", on_click=GoToEvent(url="/spectrum/{id}/")),
-            DisplayLookup(field="description"),
-            DisplayLookup(field="vlanRange"),
+            DisplayLookup(field="sdp_name", title="SDP", on_click=GoToEvent(url="/spectrum/{subscription_id}/")),
+            DisplayLookup(field="stp_a"),
+            DisplayLookup(field="stp_z"),
+            DisplayLookup(field="circuit_count", title="Circuits"),
+            DisplayLookup(field="total_capacity", title="Capacity"),
         ],
         class_name="+ small",
     )
 
 
-def segment_table(segments: list[Segment]) -> c.Table:
+def spectrum_circuit_table(circuits: list[CircuitOnSdp]) -> c.Table:
     return c.Table(
-        data_model=Segment,
+        data_model=CircuitOnSdp,
+        data=circuits,
+        columns=[
+            DisplayLookup(field="description", on_click=GoToEvent(url="/circuits/{subscription_id}/")),
+            DisplayLookup(field="connection_id"),
+            DisplayLookup(field="vlan"),
+            DisplayLookup(field="capacity"),
+            DisplayLookup(field="status"),
+        ],
+        class_name="+ small",
+    )
+
+
+def segment_table(segments: list[PathSegment]) -> c.Table:
+    return c.Table(
+        data_model=PathSegment,
         data=segments,
         columns=[
-            DisplayLookup(field="id"),
-            DisplayLookup(field="circuit_id"),
             DisplayLookup(field="order"),
-            DisplayLookup(field="sourceStp"),
-            DisplayLookup(field="destStp"),
+            DisplayLookup(field="provider_nsa"),
+            DisplayLookup(field="source_stp"),
+            DisplayLookup(field="dest_stp"),
             DisplayLookup(field="capacity"),
+            DisplayLookup(field="status"),
         ],
         class_name="+ small",
     )

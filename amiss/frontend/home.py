@@ -22,8 +22,9 @@ from fastui import components as c
 from fastui.events import GoToEvent
 from starlette.requests import Request
 
-from amiss.data import get_circuits, get_sdps, get_stps
+from amiss.data import get_circuits, get_sdps, get_spectrum, get_stps
 from amiss.frontend.util import app_page, token_from_request
+from amiss.sources.aggregator import UNATTRIBUTED_ID, SpectrumView
 from amiss.sources.reconcile import ReconcileStatus, SdpReconciliation, StpReconciliation
 from amiss.sources.wfo import CircuitRow, circuit_state_bucket
 
@@ -106,21 +107,17 @@ def _reconcile_card(title: str, url: str, result: StpReconciliation | SdpReconci
     return _card(title, url, len(result.rows), lines, unavailable=False)
 
 
-def _link_card(title: str, url: str, subtitle: str) -> AnyComponent:
-    """Build a card with no counts, just a title and subtitle linking to a page."""
-    return c.Link(
-        components=[
-            c.Div(
-                components=[
-                    c.Heading(text=title, level=5, class_name="+ card-title"),
-                    _muted(subtitle, "+ small text-muted"),
-                ],
-                class_name="+ card-body",
-            )
-        ],
-        on_click=GoToEvent(url=url),
-        class_name=_CARD_CLASS,
-    )
+def _spectrum_card(view: SpectrumView) -> AnyComponent:
+    if view.error:
+        return _card("Spectrum", "/spectrum", None, [], unavailable=True)
+    sdps = [row for row in view.rows if row.subscription_id != UNATTRIBUTED_ID]
+    unattributed = next((row.circuit_count for row in view.rows if row.subscription_id == UNATTRIBUTED_ID), 0)
+    lines = [
+        ("SDPs in use", sum(1 for row in sdps if row.circuit_count), Tone.GOOD),
+        ("unattributed circuits", unattributed, Tone.BAD),
+        ("idle SDPs", sum(1 for row in sdps if not row.circuit_count), Tone.NEUTRAL),
+    ]
+    return _card("Spectrum", "/spectrum", len(sdps), lines, unavailable=False)
 
 
 @router.get("/", response_model=FastUI, response_model_exclude_none=True)
@@ -131,15 +128,16 @@ def home(request: Request) -> list[AnyComponent]:
     (wall-clock = the slowest one, not the sum); the accessors never raise, so results collect safely.
     """
     token = token_from_request(request)
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         circuits = pool.submit(get_circuits, token)
         stps = pool.submit(get_stps, token)
         sdps = pool.submit(get_sdps, token)
+        spectrum = pool.submit(get_spectrum, token)
     cards = [
         _circuit_card(circuits.result()),
         _reconcile_card("Termination Points", "/stp", stps.result()),
         _reconcile_card("Demarcation Points", "/sdp", sdps.result()),
-        _link_card("Spectrum", "/spectrum/active", "Active circuits per link"),
+        _spectrum_card(spectrum.result()),
     ]
     dashboard = c.Div(
         components=[c.Div(components=[card], class_name="+ col-12 col-md-3 mb-3") for card in cards],

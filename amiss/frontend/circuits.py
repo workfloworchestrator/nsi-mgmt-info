@@ -21,16 +21,18 @@ from fastui.events import GoToEvent
 from pydantic import BaseModel, Field
 from starlette.requests import Request
 
-from amiss.data import get_circuits
+from amiss.data import get_circuit_path, get_circuits
 from amiss.frontend.util import (
     app_page,
     button_row,
     circuit_table,
     error_message,
+    segment_table,
     sort_form,
     sort_rows,
     token_from_request,
 )
+from amiss.sources.aggregator import PathSegment
 from amiss.sources.wfo import CircuitRow, circuit_state_bucket
 
 router = APIRouter()
@@ -126,15 +128,27 @@ def circuits_all(request: Request, sort: str | None = None) -> list[AnyComponent
     return _circuits_view(request, "all", sort)
 
 
+def _path_section(path: list[PathSegment] | None) -> AnyComponent:
+    """Render the circuit's aggregator path: a table, or a note distinguishing 'unreachable' from 'none'."""
+    if path is None:
+        return error_message("Path unavailable: the aggregator proxy could not be reached.")
+    if not path:
+        return c.Markdown(text="_No path segments reported for this circuit._")
+    return segment_table(path)
+
+
 @router.get("/{subscription_id}/", response_model=FastUI, response_model_exclude_none=True)
 def circuit_details(request: Request, subscription_id: str) -> list[AnyComponent]:
-    """Display details of a single circuit, re-fetched live by subscription id."""
+    """Display a single circuit (WFO), re-fetched live by subscription id, plus its aggregator path."""
     rows = get_circuits(token_from_request(request)) or []
     circuit = next((row for row in rows if row.subscription_id == subscription_id), None)
     if circuit is None:
         return app_page(title=f"No circuit with id {subscription_id}.")
+    path = get_circuit_path(circuit.connection_id) if circuit.connection_id else []
     return app_page(
         button_row([c.Button(text="Back", on_click=GoToEvent(url="/circuits"), class_name="+ ms-2")]),
         c.Details(data=circuit),
+        c.Heading(text="Path", level=4),
+        _path_section(path),
         title=f"Circuit {circuit.description}",
     )
