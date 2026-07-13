@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "nsi-mgmt-info"
 version = "0.1.1.dev1"
 dependencies = [
-    "fastapi[standard]==0.138.2",
+    "fastapi[standard]==0.139.0",
     "fastui==0.9.0",
     "pydantic==2.13.4",
     "pydantic-settings==2.14.2",
