@@ -182,7 +182,7 @@ def stp_table(stps: list[StpRow]) -> c.Table:
         data_model=StpRow,
         data=stps,
         columns=[
-            DisplayLookup(field="stp_id"),
+            DisplayLookup(field="stp_id", on_click=GoToEvent(url=root_url("/stp/{stp_id}/"))),
             DisplayLookup(field="vlan_range"),
             DisplayLookup(field="description"),
             DisplayLookup(field="subscription_id"),

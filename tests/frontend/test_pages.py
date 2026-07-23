@@ -117,9 +117,9 @@ def test_dashboard_fetches_each_source_once():
 
 
 def test_dashboard_card_shows_unavailable_on_source_failure():
-    # a failed fetch (None) makes its card unavailable: reconcile_stps(None, ...) -> error state
+    # both sides of a reconciliation failing (None) makes its card unavailable: reconcile_stps(None, None) -> error
     with ExitStack() as stack:
-        for p in _dashboard_patches(fetch_stp_subscriptions=None):
+        for p in _dashboard_patches(fetch_stp_subscriptions=None, fetch_dds_stps=None):
             stack.enter_context(p)
         response = client.get("/api/")
     assert response.status_code == 200
@@ -307,3 +307,51 @@ def test_reconciliation_page_shows_error(target, reconciliation, path):
     with patch(target, return_value=reconciliation):
         response = client.get(path)
     assert response.status_code == 200 and reconciliation.error in response.text
+
+
+_STP_RECONCILIATION = StpReconciliation(
+    rows=[
+        StpRow(stp_id="dom:portA", switching_service_id="dom:switch:EVTS.ANA", status=ReconcileStatus.IN_BOTH),
+        StpRow(stp_id="dom:portB", status=ReconcileStatus.MISSING_IN_DDS),
+    ]
+)
+
+
+def test_stp_list_keeps_switching_service_off_the_table():
+    # compact table: the switching service is a detail-only column (derivable from the STP id in the list);
+    # the row data itself is always serialized, so assert on the column spec, not the payload
+    with patch("amiss.frontend.stp.get_stps", return_value=_STP_RECONCILIATION):
+        response = client.get("/api/stp")
+    assert response.status_code == 200
+    assert "dom:portA" in response.text and '"field":"switching_service_id"' not in response.text
+
+
+def test_stp_detail_shows_switching_service():
+    with patch("amiss.frontend.stp.get_stps", return_value=_STP_RECONCILIATION):
+        response = client.get("/api/stp/dom:portA/")
+    assert response.status_code == 200
+    assert "dom:switch:EVTS.ANA" in response.text and '"field":"switching_service_id"' in response.text
+
+
+def test_stp_detail_unknown_id():
+    with patch("amiss.frontend.stp.get_stps", return_value=_STP_RECONCILIATION):
+        response = client.get("/api/stp/dom:nope/")
+    assert response.status_code == 200 and "No STP with id dom:nope" in response.text
+
+
+def test_stp_detail_shows_error_when_source_down():
+    with patch("amiss.frontend.stp.get_stps", return_value=StpReconciliation(error="STP source down")):
+        response = client.get("/api/stp/dom:portA/")
+    assert response.status_code == 200 and "STP source down" in response.text
+
+
+def test_stp_page_sorts_by_switching_service():
+    # stp_ids sort opposite to their switching services, so the sort visibly reorders the rows
+    rows = [
+        StpRow(stp_id="dom:portA", switching_service_id="z:switch", status=ReconcileStatus.IN_BOTH),
+        StpRow(stp_id="dom:portB", switching_service_id="a:switch", status=ReconcileStatus.IN_BOTH),
+    ]
+    with patch("amiss.frontend.stp.get_stps", return_value=StpReconciliation(rows=rows)):
+        response = client.get("/api/stp?sort=switching_service_id")
+    assert response.status_code == 200
+    assert response.text.index("dom:portB") < response.text.index("dom:portA")

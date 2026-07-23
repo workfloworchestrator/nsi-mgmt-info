@@ -23,7 +23,13 @@ from amiss.sources import dds_topology
 
 STP_JSON = json.dumps(
     [
-        {"id": "urn:ogf:network:dom:portA", "labelGroup": "1-10", "name": "Port A"},
+        {
+            "id": "urn:ogf:network:dom:portA",
+            "labelGroup": "1-10",
+            "name": "Port A",
+            "switchingServiceId": "urn:ogf:network:dom:switch:EVTS.ANA",
+        },
+        {"id": "urn:ogf:network:dom:portB", "labelGroup": "1-20", "name": "no switching service"},
         {"labelGroup": "1-20", "name": "no id here"},  # malformed: skipped
     ]
 ).encode()
@@ -39,8 +45,11 @@ SDP_JSON = json.dumps(
 def test_fetch_dds_stps_parses_and_skips_malformed():
     with patch.object(dds_topology, "get_dds_proxy_stps", return_value=STP_JSON):
         stps = dds_topology.fetch_dds_stps()
-    assert [s.stp_id for s in stps] == ["dom:portA"]
+    assert [s.stp_id for s in stps] == ["dom:portA", "dom:portB"]
     assert stps[0].vlan_range == "1-10" and stps[0].description == "Port A"
+    # switchingServiceId is mapped with the URN prefix stripped; absent -> None
+    assert stps[0].switching_service_id == "dom:switch:EVTS.ANA"
+    assert stps[1].switching_service_id is None
 
 
 def test_fetch_dds_sdps_parses_and_skips_incomplete():

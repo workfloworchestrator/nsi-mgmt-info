@@ -15,9 +15,9 @@
 """Reconcile the WFO STP/SDP subscriptions against the DDS topology.
 
 Each row is tagged so the UI can show which subscriptions are backed by the DDS, which topology has
-no subscription yet, and which subscriptions the DDS no longer knows about. If either source failed
-to fetch (``None``, distinct from an empty list), the reconciliation returns an ``error`` and no rows
-— a diff computed from a failed fetch would falsely flag everything.
+no subscription yet, and which subscriptions the DDS no longer knows about. Only if both sources
+failed to fetch (``None``, distinct from an empty list) does the reconciliation return an ``error``
+and no rows; if a single source failed, it is treated as empty so the available side still renders.
 """
 
 from collections.abc import Callable, Iterable
@@ -42,6 +42,7 @@ class DdsStp(BaseModel):
     stp_id: str
     vlan_range: str | None = None
     description: str | None = None
+    switching_service_id: str | None = None
 
 
 class DdsSdp(BaseModel):
@@ -59,6 +60,7 @@ class StpRow(BaseModel):
     stp_id: str | None = None
     vlan_range: str | None = None
     description: str | None = None
+    switching_service_id: str | None = None
     subscription_id: str | None = None
     status: ReconcileStatus
 
@@ -118,6 +120,7 @@ def _stp_row(nid: str, wfo_by_id: dict[str, StpSub], dds_by_id: dict[str, DdsStp
         stp_id=(dds.stp_id if dds else wfo.stp_id if wfo else nid),
         vlan_range=(dds.vlan_range if dds else None) or (wfo.label_group if wfo else None),
         description=(dds.description if dds else None) or (wfo.stp_name if wfo else None),
+        switching_service_id=dds.switching_service_id if dds else None,
         subscription_id=wfo.subscription_id if wfo else None,
         status=_status(wfo is not None, dds is not None),
     )

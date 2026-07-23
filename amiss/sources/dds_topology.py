@@ -47,10 +47,14 @@ def _parse_list(raw: bytes | None, what: str) -> list | None:
 
 def _to_dds_stp(item: dict) -> DdsStp | None:
     stp_id = item.get("id")
-    return (
-        DdsStp(stp_id=strip_urn(stp_id), vlan_range=item.get("labelGroup"), description=item.get("name"))
-        if stp_id
-        else None
+    if not stp_id:
+        return None
+    switching_service_id = item.get("switchingServiceId")
+    return DdsStp(
+        stp_id=strip_urn(stp_id),
+        vlan_range=item.get("labelGroup"),
+        description=item.get("name"),
+        switching_service_id=strip_urn(switching_service_id) if switching_service_id else None,
     )
 
 

@@ -47,12 +47,39 @@ def test_get_stps_reconciles():
     assert [r.status for r in result.rows] == [ReconcileStatus.IN_BOTH]
 
 
-def test_get_stps_source_failure_yields_error():
+@pytest.mark.parametrize(
+    ("getter", "wfo_fetch", "dds_fetch"),
+    [
+        pytest.param(data.get_stps, "fetch_stp_subscriptions", "fetch_dds_stps", id="stp"),
+        pytest.param(data.get_sdps, "fetch_sdp_subscriptions", "fetch_dds_sdps", id="sdp"),
+    ],
+)
+def test_reconcile_getter_both_sources_failed_yields_error(getter, wfo_fetch, dds_fetch):
     with (
-        patch.object(data, "fetch_stp_subscriptions", return_value=None),
-        patch.object(data, "fetch_dds_stps", return_value=[]),
+        patch.object(data, wfo_fetch, return_value=None),
+        patch.object(data, dds_fetch, return_value=None),
     ):
-        assert data.get_stps("tok").error is not None
+        assert getter("tok").error is not None
+
+
+@pytest.mark.parametrize(
+    ("getter", "wfo_fetch", "dds_fetch"),
+    [
+        pytest.param(data.get_stps, "fetch_stp_subscriptions", "fetch_dds_stps", id="stp"),
+        pytest.param(data.get_sdps, "fetch_sdp_subscriptions", "fetch_dds_sdps", id="sdp"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("wfo_return", "dds_return"),
+    [pytest.param(None, [], id="wfo-failed"), pytest.param([], None, id="dds-failed")],
+)
+def test_reconcile_getter_single_source_failure_degrades(getter, wfo_fetch, dds_fetch, wfo_return, dds_return):
+    with (
+        patch.object(data, wfo_fetch, return_value=wfo_return),
+        patch.object(data, dds_fetch, return_value=dds_return),
+    ):
+        result = getter("tok")
+    assert result.error is None and result.rows == []
 
 
 def test_get_sdps_reconciles():

@@ -70,9 +70,10 @@ SDPS = [
 ]  # fmt: skip
 
 DDS_STPS = [
-    {"id": "urn:ogf:network:port-a", "labelGroup": "1-4094", "name": "Port A"},  # matches s-a -> IN_BOTH
+    {"id": "urn:ogf:network:port-a", "labelGroup": "1-4094", "name": "Port A",
+     "switchingServiceId": "urn:ogf:network:dom:switch:EVTS.ANA"},  # matches s-a -> IN_BOTH
     {"id": "urn:ogf:network:port-x", "labelGroup": "1-4094", "name": "Port X"},  # DDS only
-]  # port-z is WFO-only -> MISSING_IN_DDS
+]  # fmt: skip  # port-z is WFO-only -> MISSING_IN_DDS
 
 DDS_SDPS = [
     {"stpAId": "urn:ogf:network:port-a", "stpZId": "urn:ogf:network:port-b"},  # matches d1 -> IN_BOTH
@@ -138,6 +139,15 @@ def test_stp_reconciliation_all_three_states():
     assert "backed by DDS" in response.text  # port-a: in both
     assert "DDS only" in response.text  # port-x: DDS only
     assert "subscription not in DDS" in response.text  # port-z: WFO only
+
+
+@pytest.mark.usefixtures("upstreams")
+def test_stp_detail_shows_switching_service():
+    response = _get("/api/stp/port-a/")
+    assert response.status_code == 200
+    # switchingServiceId from the DDS proxy, URN prefix stripped; a detail-only field (no list column)
+    assert "dom:switch:EVTS.ANA" in response.text and '"field":"switching_service_id"' in response.text
+    assert '"field":"switching_service_id"' not in _get("/api/stp").text
 
 
 @pytest.mark.usefixtures("upstreams")
