@@ -60,7 +60,12 @@ def get_sdps(token: str | None) -> SdpReconciliation:
         with ThreadPoolExecutor(max_workers=2) as pool:
             wfo = pool.submit(fetch_sdp_subscriptions, token)
             dds = pool.submit(fetch_dds_sdps)
-        return reconcile_sdps(wfo.result(), dds.result())
+            try:
+                r = reconcile_sdps(wfo.result(), dds.result())
+                return r
+            except Exception as e:
+                logger.warning("reconcile_sdps failed", error=str(e))
+            return SdpReconciliation(error="fetch SDP problem")
     except Exception as e:
         logger.warning("SDP reconciliation failed", error=str(e))
         return SdpReconciliation(error="SDP data unavailable")
@@ -70,10 +75,10 @@ def get_spectrum(token: str | None) -> SpectrumView:
     """Return the SDPs with the WFO-backed circuits crossing them (WFO SDPs + circuits + aggregator, concurrent)."""
     try:
         with ThreadPoolExecutor(max_workers=3) as pool:
-            sdps = pool.submit(fetch_sdp_subscriptions, token)
+            wfo = pool.submit(fetch_sdp_subscriptions, token)
             agg = pool.submit(fetch_agg_circuits)
             circuits = pool.submit(fetch_circuits, token)
-        return build_spectrum(sdps.result(), agg.result(), circuits.result())
+        return build_spectrum(wfo.result(), agg.result(), circuits.result())
     except Exception as e:
         logger.warning("building spectrum failed", error=str(e))
         return SpectrumView(error="Spectrum data unavailable")

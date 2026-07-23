@@ -125,8 +125,12 @@ def _stp_row(nid: str, wfo_by_id: dict[str, StpSub], dds_by_id: dict[str, DdsStp
 
 def reconcile_stps(wfo: list[StpSub] | None, dds: list[DdsStp] | None) -> StpReconciliation:
     """Reconcile WFO STP subscriptions against DDS STPs, matched on the normalised STP id."""
-    if wfo is None or dds is None:
+    if wfo is None and dds is None:
         return StpReconciliation(error="STP reconciliation unavailable: a source could not be reached")
+    if wfo is None:
+        wfo = []
+    if dds is None:
+        dds = []
     wfo_by_id = _by_normalized_id(wfo, lambda s: s.stp_id)
     dds_by_id = _by_normalized_id(dds, lambda d: d.stp_id)
     ids = sorted(set(wfo_by_id) | set(dds_by_id))
@@ -157,8 +161,12 @@ def _sdp_row(
 
 def reconcile_sdps(wfo: list[SdpSub] | None, dds: list[DdsSdp] | None) -> SdpReconciliation:
     """Reconcile WFO SDP subscriptions against DDS SDPs, matched on the unordered pair of STP ids."""
-    if wfo is None or dds is None:
+    if wfo is None and dds is None:
         return SdpReconciliation(error="SDP reconciliation unavailable: a source could not be reached")
+    if wfo is None:
+        wfo = []
+    if dds is None:
+        dds = []
     wfo_by_pair = {pair: s for s in wfo if (pair := sdp_pair(member.stp_id for member in s.stps))}
     dds_by_pair = {pair: d for d in dds if (pair := sdp_pair((d.stp_a_id, d.stp_z_id)))}
     pairs = sorted(set(wfo_by_pair) | set(dds_by_pair), key=lambda p: tuple(sorted(p)))
