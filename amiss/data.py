@@ -61,8 +61,7 @@ def get_sdps(token: str | None) -> SdpReconciliation:
             wfo = pool.submit(fetch_sdp_subscriptions, token)
             dds = pool.submit(fetch_dds_sdps)
             try:
-                r = reconcile_sdps(wfo.result(), dds.result())
-                return r
+                return reconcile_sdps(wfo.result(), dds.result())
             except Exception as e:
                 logger.warning("reconcile_sdps failed", error=str(e))
             return SdpReconciliation(error="fetch SDP problem")
