@@ -220,14 +220,9 @@ def build_spectrum(
     source could not be reached (``None``, not empty) the whole view is an error — a grouping computed
     from a failed fetch would misreport every SDP.
     """
-    if sdps is None and agg_circuits is None and wfo_circuits is None:
+    # Arno: Spectrum views cannot be created without WFO access, so no degraded data view.
+    if sdps is None or agg_circuits is None or wfo_circuits is None:
         return SpectrumView(error="Spectrum data unavailable")
-    if sdps is None:
-        sdps = []
-    if agg_circuits is None:
-        agg_circuits = []
-    if wfo_circuits is None:
-        wfo_circuits = []
     backed = _wfo_backed_pairs(agg_circuits, wfo_circuits)
     touched = [_touched(agg) for agg, _wfo in backed]
     pairs = sorted(
