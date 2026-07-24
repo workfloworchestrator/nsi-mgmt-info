@@ -75,9 +75,11 @@ def spectrum_detail(request: Request, subscription_id: str) -> list[AnyComponent
     if sdp is None:
         return app_page(title=f"No SDP with id {subscription_id}.")
     heading = f"{sdp.stp_a} <-> {sdp.stp_z}" if sdp.stp_a else (sdp.sdp_name or "")
+    # Arno: just 1 sort: VLAN ID
+    circuits_sorted_on_vlan = sorted(sdp.circuits, key=lambda circuit: circuit.vlan)
     return app_page(
         button_row([c.Button(text="Back", on_click=GoToEvent(url=root_url("/spectrum")), class_name="+ ms-2")]),
         c.Heading(text=heading, level=4),
-        spectrum_circuit_table(sdp.circuits),
+        spectrum_circuit_table(circuits_sorted_on_vlan),
         title=f"SDP {sdp.sdp_name}",
     )

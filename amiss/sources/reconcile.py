@@ -60,7 +60,7 @@ class StpRow(BaseModel):
     stp_id: str | None = None
     vlan_range: str | None = None
     description: str | None = None
-    switching_service_id: str | None = None
+    switching_service_id: str | None = None  # Arno: note that this has the same domain-specific prefix as the stp_id, so that alone could be used to sort by SwitchingService/domain/toplogy.
     subscription_id: str | None = None
     status: ReconcileStatus
 
