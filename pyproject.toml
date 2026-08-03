@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "nsi-mgmt-info"
 version = "0.1.1.dev1"
 dependencies = [
-    "fastapi[standard]==0.139.2",
+    "fastapi[standard]==0.140.0",
     "fastui==0.9.0",
     "pydantic==2.13.4",
     "pydantic-settings==2.14.2",
@@ -44,7 +44,7 @@ include = ["amiss*"]
 [dependency-groups]
 dev = [
     "mypy==2.3.0",
-    "ruff==0.15.22",
+    "ruff==0.16.0",
     "types-requests==2.33.0.20260712",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
