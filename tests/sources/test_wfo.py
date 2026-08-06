@@ -154,6 +154,18 @@ class TestCreatedBy:
     def test_missing_processes_key(self):
         assert wfo._created_by({}) is None
 
+    @pytest.mark.parametrize(
+        ("created_by", "expected"),
+        [
+            pytest.param("Ada Lovelace <ada@example.org>", "Ada Lovelace", id="name-and-email"),
+            pytest.param("Ada Lovelace", "Ada Lovelace", id="name-only"),
+            pytest.param("ada@example.org", "ada@example.org", id="email-only"),
+            pytest.param(None, None, id="unknown-creator"),
+        ],
+    )
+    def test_created_by_name_drops_the_email(self, created_by, expected):
+        assert wfo.CircuitRow(subscription_id="x", created_by=created_by).created_by_name == expected
+
 
 def test_page_warns_on_truncation():
     data = {"subscriptions": {"page": [{"subscriptionId": "x"}], "pageInfo": {"totalItems": 5}}}

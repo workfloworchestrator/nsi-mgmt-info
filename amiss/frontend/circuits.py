@@ -148,7 +148,8 @@ def circuit_details(request: Request, subscription_id: str) -> list[AnyComponent
         return app_page(title=f"No circuit with id {subscription_id}.")
     path = get_circuit_path(circuit.connection_id) if circuit.connection_id else []
     # detail shows every field except the list-only helpers (short_id, and the merged source/dest —
-    # the raw source_stp/source_vlan/dest_stp/dest_vlan are shown instead)
+    # the raw source_stp/source_vlan/dest_stp/dest_vlan are shown instead). CircuitRow.created_by_name
+    # is likewise list-only and needs no exclusion here: model_fields holds no computed fields.
     list_only = {"short_id", "source", "dest"}
     detail_fields = [DisplayLookup(field=name) for name in CircuitRow.model_fields if name not in list_only]
     return app_page(

@@ -171,7 +171,7 @@ def circuit_table(circuits: list[CircuitRow]) -> c.Table:
             DisplayLookup(field="dest", title="Destination"),
             DisplayLookup(field="bandwidth", title="BW"),
             DisplayLookup(field="state"),
-            DisplayLookup(field="created_by"),
+            DisplayLookup(field="created_by_name", title="Created By"),
         ],
         class_name="+ small",
     )

@@ -24,7 +24,7 @@ from datetime import datetime
 
 import requests
 import structlog
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 from amiss.nsi import REQUEST_TIMEOUT, session
 from amiss.settings import settings
@@ -85,9 +85,20 @@ class CircuitRow(BaseModel):
     dest: str | None = None
     bandwidth: int | None = None
     state: str | None = None
-    created_by: str | None = None
+    created_by: str | None = None  # 'Full Name <email>' from the WFO; the list shows created_by_name
     connection_id: str | None = None
     global_reservation_id: str | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def created_by_name(self) -> str | None:
+        """The creator without the email, to keep the Created By column narrow in the list.
+
+        The WFO reports ``Full Name <email>`` when the token carries both claims, and a bare name or
+        email when it carries one; dropping everything from the first ``' <'`` leaves the full name
+        in the first case and the single value it did report in the others.
+        """
+        return self.created_by.split(" <")[0] if self.created_by else self.created_by
 
 
 class StpSub(BaseModel):
