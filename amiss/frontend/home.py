@@ -25,7 +25,8 @@ from fastui import components as c
 from fastui.events import GoToEvent
 from starlette.requests import Request
 
-from amiss.frontend.util import app_page, root_url, token_from_request
+from amiss.data import NOT_AUTHORIZED
+from amiss.frontend.util import app_page, error_message, root_url, token_from_request
 from amiss.sources.aggregator import UNATTRIBUTED_ID, SpectrumView, build_spectrum, fetch_agg_circuits
 from amiss.sources.dds_topology import fetch_dds_sdps, fetch_dds_stps
 from amiss.sources.reconcile import (
@@ -37,6 +38,7 @@ from amiss.sources.reconcile import (
 )
 from amiss.sources.wfo import (
     CircuitRow,
+    WfoUnauthorizedError,
     circuit_state_bucket,
     fetch_circuits,
     fetch_sdp_subscriptions,
@@ -50,9 +52,15 @@ _T = TypeVar("_T")
 
 
 def _safe(fn: Callable[..., _T], *args: object) -> _T | None:
-    """Run a source fetch, degrading any unexpected error to ``None`` so the dashboard never 500s."""
+    """Run a source fetch, degrading any unexpected error to ``None`` so the dashboard never 500s.
+
+    A refused credential is let through: it makes every card read "unavailable", which is the very
+    misdiagnosis the pages avoid, and the dashboard is where a blocked user lands first.
+    """
     try:
         return fn(*args)
+    except WfoUnauthorizedError:
+        raise
     except Exception as e:
         logger.warning("dashboard source fetch failed", fn=fn.__name__, error=str(e))
         return None
@@ -165,7 +173,10 @@ def home(request: Request) -> list[AnyComponent]:
         dds_stps = pool.submit(_safe, fetch_dds_stps)
         dds_sdps = pool.submit(_safe, fetch_dds_sdps)
         agg = pool.submit(_safe, fetch_agg_circuits)
-    circuit_rows, sdp_rows = circuits.result(), sdp_subs.result()
+    try:
+        circuit_rows, sdp_rows = circuits.result(), sdp_subs.result()
+    except WfoUnauthorizedError:
+        return app_page(c.Markdown(text=introduction), error_message(NOT_AUTHORIZED), title="Dashboard")
     cards = [
         _circuit_card(circuit_rows),
         _reconcile_card("Termination Points", "/stp", reconcile_stps(stp_subs.result(), dds_stps.result())),

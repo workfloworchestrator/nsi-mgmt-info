@@ -19,20 +19,23 @@ from unittest.mock import patch
 import pytest
 
 from amiss import data
+from amiss.sources import wfo
 from amiss.sources.aggregator import AggCircuit, PathSegment
 from amiss.sources.reconcile import DdsSdp, DdsStp, ReconcileStatus
-from amiss.sources.wfo import CircuitRow, SdpMember, SdpSub, StpSub
+from amiss.sources.wfo import CircuitRow, SdpMember, SdpSub, StpSub, WfoUnauthorizedError
 
 
 def test_get_circuits_passthrough():
     rows = [CircuitRow(subscription_id="c1")]
     with patch.object(data, "fetch_circuits", return_value=rows):
-        assert data.get_circuits("tok") == rows
+        result = data.get_circuits("tok")
+    assert result.rows == rows and result.error is None
 
 
-def test_get_circuits_none_on_failure():
+def test_get_circuits_error_on_failure():
     with patch.object(data, "fetch_circuits", return_value=None):
-        assert data.get_circuits("tok") is None
+        result = data.get_circuits("tok")
+    assert result.rows == [] and "could not be reached" in result.error
 
 
 def test_get_stps_reconciles():
@@ -140,7 +143,15 @@ def test_get_circuit_path_none_on_failure(fetch_kwargs):
 
 def test_get_circuits_never_raises_on_source_error():
     with patch.object(data, "fetch_circuits", side_effect=RuntimeError("mTLS misconfig")):
-        assert data.get_circuits("tok") is None
+        assert "could not be reached" in data.get_circuits("tok").error
+
+
+@pytest.mark.parametrize("accessor", ["get_circuits", "get_stps", "get_sdps", "get_spectrum"])
+def test_refused_credentials_are_reported_as_not_authorized(accessor):
+    # Patch query_wfo, not the individual fetches: every WFO fetch funnels through it, so an
+    # accessor's other fetches cannot escape to the network and cost a real DNS lookup.
+    with patch.object(wfo, "query_wfo", side_effect=WfoUnauthorizedError):
+        assert getattr(data, accessor)("tok").error == data.NOT_AUTHORIZED
 
 
 @pytest.mark.parametrize(

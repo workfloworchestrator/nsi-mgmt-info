@@ -190,7 +190,7 @@ class TestQueryWfo:
             pytest.param(_FakeResponse(content=b"<html>"), id="non-json"),
             pytest.param(_FakeResponse(content=b"[]"), id="not-an-object"),
             pytest.param(
-                _FakeResponse(content=json.dumps({"errors": [{"message": "not_authenticated"}]}).encode()),
+                _FakeResponse(content=json.dumps({"errors": [{"message": "Cannot query field 'nope'"}]}).encode()),
                 id="graphql-errors",
             ),
         ],
@@ -198,6 +198,36 @@ class TestQueryWfo:
     def test_returns_none_on_failure(self, response):
         with patch.object(wfo.session, "post", return_value=response):
             assert wfo.query_wfo("{ x }", "t") is None
+
+    @pytest.mark.parametrize(
+        "response",
+        [
+            pytest.param(_FakeResponse(status_code=401), id="http-401"),
+            pytest.param(_FakeResponse(status_code=403), id="http-403"),
+            pytest.param(
+                _FakeResponse(content=json.dumps({"errors": [{"message": "not_authenticated"}]}).encode()),
+                id="bare-underscored-message",
+            ),
+            pytest.param(
+                _FakeResponse(
+                    content=json.dumps({"errors": [{"message": "User is not authorized to query `x`"}]}).encode()
+                ),
+                id="worded-message",
+            ),
+            pytest.param(
+                _FakeResponse(
+                    content=json.dumps(
+                        {"errors": [{"message": "boom", "extensions": {"error_type": "not_authorized"}}]}
+                    ).encode()
+                ),
+                id="error-type-extension",
+            ),
+        ],
+    )
+    def test_raises_unauthorized_when_credentials_are_refused(self, response):
+        """A refusal is not an outage: the caller reached the WFO and only lacks the read group."""
+        with patch.object(wfo.session, "post", return_value=response), pytest.raises(wfo.WfoUnauthorizedError):
+            wfo.query_wfo("{ x }", "t")
 
     def test_returns_none_on_transport_error(self):
         with patch.object(wfo.session, "post", side_effect=requests.exceptions.ReadTimeout("slow")):

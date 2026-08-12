@@ -15,8 +15,9 @@
 """Query the WFO orchestrator GraphQL API and map results into render DTOs.
 
 The end-user's OIDC token is forwarded per request as a Bearer credential; the orchestrator validates
-it (SRAM userinfo) and enforces the operators group. Every fetch returns ``None`` on any failure
-(transport, non-200, non-JSON, GraphQL errors) so callers can tell "failed" apart from "empty".
+it (SRAM userinfo) and gates queries on its read groups. Every fetch returns ``None`` on any failure
+(transport, non-200, non-JSON, GraphQL errors) so callers can tell "failed" apart from "empty"; a
+refusal of the caller's credentials instead raises :class:`WfoUnauthorizedError`.
 """
 
 import json
@@ -67,6 +68,30 @@ SDP_QUERY = """
   pageInfo { totalItems }
 } }
 """ % {"sdp": SDP_TYPE}
+
+
+class WfoUnauthorizedError(Exception):
+    """The WFO refused the caller's credentials, rather than failing to answer.
+
+    Worth keeping distinct from a fetch failure: the two look identical on screen, but this one is
+    fixed by re-authenticating or being added to a group, not by waiting for an upstream to recover.
+    """
+
+
+# oauth2-lib tags a refusal with an ``error_type`` extension and words the message "User is not
+# authenticated/authorized to ..."; the extension is authoritative, the message is the fallback.
+_AUTHZ_ERROR_TYPES = frozenset({"not_authenticated", "not_authorized"})
+
+
+def _is_authz_error(errors: list) -> bool:
+    """Return whether a GraphQL ``errors`` payload is a credentials refusal, not a real failure."""
+    return any(
+        (error.get("extensions") or {}).get("error_type") in _AUTHZ_ERROR_TYPES
+        # Underscores normalised so a bare "not_authenticated" message matches too.
+        or "not auth" in str(error.get("message", "")).replace("_", " ").lower()
+        for error in errors
+        if isinstance(error, dict)
+    )
 
 
 class CircuitRow(BaseModel):
@@ -144,7 +169,8 @@ def query_wfo(query: str, token: str | None) -> dict | None:
     """POST a GraphQL query to the WFO, forwarding ``token`` as a Bearer credential.
 
     Returns the parsed ``data`` object, or ``None`` on transport failure, non-200, non-JSON, or a
-    GraphQL ``errors`` payload (e.g. the ``not_authenticated`` response when no valid token is sent).
+    GraphQL ``errors`` payload. Raises :class:`WfoUnauthorizedError` when the WFO refused the
+    credentials (401/403, or an authentication/authorization ``errors`` payload).
     """
     log = logger.bind()
     url = f"{str(settings.NSI_AMISS_WFO_URL).rstrip('/')}/api/graphql"
@@ -156,6 +182,9 @@ def query_wfo(query: str, token: str | None) -> dict | None:
     except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
         log.warning("cannot reach WFO GraphQL", url=url, error=str(e))
         return None
+    if r.status_code in (401, 403):
+        log.warning("WFO GraphQL refused the credentials", url=url, status=r.status_code)
+        raise WfoUnauthorizedError
     if r.status_code != 200:
         log.warning("WFO GraphQL returned non-200", url=url, status=r.status_code, reason=r.reason)
         return None
@@ -168,6 +197,9 @@ def query_wfo(query: str, token: str | None) -> dict | None:
         log.warning("WFO GraphQL response is not a JSON object", url=url)
         return None
     if result.get("errors"):
+        if _is_authz_error(result["errors"]):
+            log.warning("WFO GraphQL refused the credentials", url=url, errors=result["errors"])
+            raise WfoUnauthorizedError
         log.warning("WFO GraphQL returned errors", errors=result["errors"])
         return None
     data = result.get("data")

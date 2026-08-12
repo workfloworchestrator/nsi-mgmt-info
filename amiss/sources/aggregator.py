@@ -221,7 +221,7 @@ def build_spectrum(
     from a failed fetch would misreport every SDP.
     """
     if sdps is None or agg_circuits is None or wfo_circuits is None:
-        return SpectrumView(error="Spectrum data unavailable")
+        return SpectrumView(error="Spectrum unavailable: the aggregator proxy or WFO could not be reached.")
     backed = _wfo_backed_pairs(agg_circuits, wfo_circuits)
     touched = [_touched(agg) for agg, _wfo in backed]
     pairs = sorted(

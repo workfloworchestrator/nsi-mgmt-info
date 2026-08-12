@@ -90,14 +90,10 @@ def _tab_path(tab: str) -> str:
 
 def _circuits_view(request: Request, tab: str, sort: str | None) -> list[AnyComponent]:
     path = _tab_path(tab)
-    rows = get_circuits(token_from_request(request))
-    if rows is None:
-        return app_page(
-            _tabs(),
-            error_message("Circuits unavailable: the WFO could not be reached."),
-            title="Circuits",
-        )
-    circuits_in_tab = sort_rows([row for row in rows if _in_tab(row, tab)], sort)
+    result = get_circuits(token_from_request(request))
+    if result.error:
+        return app_page(_tabs(), error_message(result.error), title="Circuits")
+    circuits_in_tab = sort_rows([row for row in result.rows if _in_tab(row, tab)], sort)
     return app_page(
         _tabs(),
         sort_form(CircuitSortForm, root_url(path), sort),
@@ -142,8 +138,10 @@ def _path_section(path: list[PathSegment] | None) -> AnyComponent:
 @router.get("/{subscription_id}/", response_model=FastUI, response_model_exclude_none=True)
 def circuit_details(request: Request, subscription_id: str) -> list[AnyComponent]:
     """Display a single circuit (WFO), re-fetched live by subscription id, plus its aggregator path."""
-    rows = get_circuits(token_from_request(request)) or []
-    circuit = next((row for row in rows if row.subscription_id == subscription_id), None)
+    result = get_circuits(token_from_request(request))
+    if result.error:
+        return app_page(error_message(result.error), title="Circuit")
+    circuit = next((row for row in result.rows if row.subscription_id == subscription_id), None)
     if circuit is None:
         return app_page(title=f"No circuit with id {subscription_id}.")
     path = get_circuit_path(circuit.connection_id) if circuit.connection_id else []

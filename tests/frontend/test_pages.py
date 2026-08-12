@@ -21,11 +21,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from amiss import app
+from amiss.data import NOT_AUTHORIZED, CircuitList
 from amiss.frontend.circuits import _in_tab
 from amiss.frontend.home import Tone, _stat_line
 from amiss.sources.aggregator import CircuitOnSdp, PathSegment, SpectrumRow, SpectrumView
 from amiss.sources.reconcile import DdsStp, ReconcileStatus, SdpReconciliation, SdpRow, StpReconciliation, StpRow
-from amiss.sources.wfo import CircuitRow, StpSub
+from amiss.sources.wfo import CircuitRow, StpSub, WfoUnauthorizedError
 
 client = TestClient(app)
 
@@ -138,7 +139,7 @@ def test_footer_logo_src_points_at_an_existing_file():
 
 def test_circuits_page_renders():
     rows = [CircuitRow(subscription_id="sub-1", description="c", state="ACTIVATED", created_by="alice")]
-    with patch("amiss.frontend.circuits.get_circuits", return_value=rows):
+    with patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)):
         response = client.get("/api/circuits")
     assert response.status_code == 200
     assert "sub-1" in response.text and "alice" in response.text
@@ -149,7 +150,7 @@ def test_circuits_failed_tab_filters_by_state():
         CircuitRow(subscription_id="ok", state="ACTIVATED"),
         CircuitRow(subscription_id="bad", state="FAILED"),
     ]
-    with patch("amiss.frontend.circuits.get_circuits", return_value=rows):
+    with patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)):
         response = client.get("/api/circuits/failed")
     assert response.status_code == 200
     assert "bad" in response.text and "ok" not in response.text
@@ -158,21 +159,23 @@ def test_circuits_failed_tab_filters_by_state():
 @pytest.mark.parametrize("path", ["/api/circuits/terminated", "/api/circuits/all"], ids=["terminated", "all"])
 def test_circuit_tab_routes_render(path):
     with patch(
-        "amiss.frontend.circuits.get_circuits", return_value=[CircuitRow(subscription_id="x", state="TERMINATED")]
+        "amiss.frontend.circuits.get_circuits",
+        return_value=CircuitList(rows=[CircuitRow(subscription_id="x", state="TERMINATED")]),
     ):
         assert client.get(path).status_code == 200
 
 
-def test_circuits_page_shows_error_when_unreachable():
-    with patch("amiss.frontend.circuits.get_circuits", return_value=None):
-        response = client.get("/api/circuits")
+@pytest.mark.parametrize("path", ["/api/circuits", "/api/circuits/sub-1/"], ids=["list", "detail"])
+def test_circuits_pages_render_the_reason_they_have_no_data(path):
+    with patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(error="refused")):
+        response = client.get(path)
     assert response.status_code == 200
-    assert "unavailable" in response.text.lower()
+    assert "refused" in response.text
 
 
 def test_circuit_detail_renders():
     rows = [CircuitRow(subscription_id="sub-1", description="circuit one")]
-    with patch("amiss.frontend.circuits.get_circuits", return_value=rows):
+    with patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)):
         response = client.get("/api/circuits/sub-1/")
     assert response.status_code == 200
     assert "circuit one" in response.text
@@ -184,7 +187,7 @@ def test_circuit_detail_shows_path_segments():
         PathSegment(order=0, provider_nsa="nsa-a", source_stp="a", dest_stp="b", capacity=1000, status="ACTIVATED")
     ]
     with (
-        patch("amiss.frontend.circuits.get_circuits", return_value=rows),
+        patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)),
         patch("amiss.frontend.circuits.get_circuit_path", return_value=segments),
     ):
         response = client.get("/api/circuits/sub-1/")
@@ -195,7 +198,7 @@ def test_circuit_detail_shows_path_segments():
 def test_circuit_detail_path_unavailable():
     rows = [CircuitRow(subscription_id="sub-1", connection_id="conn-1")]
     with (
-        patch("amiss.frontend.circuits.get_circuits", return_value=rows),
+        patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)),
         patch("amiss.frontend.circuits.get_circuit_path", return_value=None),
     ):
         response = client.get("/api/circuits/sub-1/")
@@ -204,7 +207,7 @@ def test_circuit_detail_path_unavailable():
 
 
 def test_circuit_detail_not_found():
-    with patch("amiss.frontend.circuits.get_circuits", return_value=[]):
+    with patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList()):
         response = client.get("/api/circuits/does-not-exist/")
     assert response.status_code == 200
     assert "No circuit with id" in response.text
@@ -217,6 +220,17 @@ def test_dashboard_circuit_card_unavailable_when_wfo_unreachable():
         response = client.get("/api/")
     assert response.status_code == 200
     assert "unavailable" in response.text
+
+
+def test_dashboard_says_not_authorized_rather_than_unavailable():
+    """The dashboard is where a blocked user lands first, so it must not read as an outage."""
+    with ExitStack() as stack:
+        for p in _dashboard_patches():
+            stack.enter_context(p)
+        stack.enter_context(patch("amiss.frontend.home.fetch_circuits", side_effect=WfoUnauthorizedError))
+        response = client.get("/api/")
+    assert response.status_code == 200
+    assert NOT_AUTHORIZED in response.text
 
 
 _SDP = SpectrumRow(
@@ -262,11 +276,11 @@ def test_spectrum_detail_not_found():
     assert "No SDP with id" in response.text
 
 
-def test_spectrum_page_shows_error_when_unreachable():
+def test_spectrum_page_shows_the_reason_it_has_no_data():
     with patch("amiss.frontend.spectrum.get_spectrum", return_value=SpectrumView(error="down")):
         response = client.get("/api/spectrum")
     assert response.status_code == 200
-    assert "unavailable" in response.text.lower()
+    assert "down" in response.text
 
 
 @pytest.mark.parametrize(

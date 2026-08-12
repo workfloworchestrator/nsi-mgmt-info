@@ -21,25 +21,51 @@ there is no cache. Accessors that need more than one upstream fetch them concurr
 from concurrent.futures import ThreadPoolExecutor
 
 import structlog
+from pydantic import BaseModel
 
 from amiss.sources.aggregator import PathSegment, SpectrumView, build_spectrum, fetch_agg_circuits
 from amiss.sources.dds_topology import fetch_dds_sdps, fetch_dds_stps
 from amiss.sources.reconcile import SdpReconciliation, StpReconciliation, reconcile_sdps, reconcile_stps
-from amiss.sources.wfo import CircuitRow, fetch_circuits, fetch_sdp_subscriptions, fetch_stp_subscriptions
+from amiss.sources.wfo import (
+    CircuitRow,
+    WfoUnauthorizedError,
+    fetch_circuits,
+    fetch_sdp_subscriptions,
+    fetch_stp_subscriptions,
+)
 
 logger = structlog.get_logger(__name__)
+
+# Deliberately vague about which credential problem it is: query_wfo cannot tell an expired session
+# from a missing group, and naming only one sends half of those users to the wrong fix.
+NOT_AUTHORIZED = (
+    "Not authorized: the orchestrator refused your credentials. "
+    "Your session may have expired, or your account may lack the required group."
+)
+
+
+class CircuitList(BaseModel):
+    """The /circuits result: circuit rows, or an ``error`` if they could not be fetched."""
+
+    rows: list[CircuitRow] = []
+    error: str | None = None
 
 
 # These accessors are the boundary to external systems and back the user-facing pages (incl. the
 # landing dashboard), so they must never raise: any unexpected error degrades to "unavailable"
-# rather than a 500. Expected fetch failures are already turned into None/error upstream.
-def get_circuits(token: str | None) -> list[CircuitRow] | None:
-    """Return the circuit rows, or ``None`` if they could not be fetched."""
+# rather than a 500. Fetch failures arrive as None/error upstream, except a refused credential,
+# which raises.
+def get_circuits(token: str | None) -> CircuitList:
+    """Return the circuit rows, or a ``CircuitList`` carrying why they could not be fetched."""
     try:
-        return fetch_circuits(token)
+        rows = fetch_circuits(token)
+        if rows is not None:
+            return CircuitList(rows=rows)
+    except WfoUnauthorizedError:
+        return CircuitList(error=NOT_AUTHORIZED)
     except Exception as e:
         logger.warning("fetching circuits failed", error=str(e))
-        return None
+    return CircuitList(error="Circuits unavailable: the WFO could not be reached.")
 
 
 def get_stps(token: str | None) -> StpReconciliation:
@@ -49,6 +75,8 @@ def get_stps(token: str | None) -> StpReconciliation:
             wfo = pool.submit(fetch_stp_subscriptions, token)
             dds = pool.submit(fetch_dds_stps)
         return reconcile_stps(wfo.result(), dds.result())
+    except WfoUnauthorizedError:
+        return StpReconciliation(error=NOT_AUTHORIZED)
     except Exception as e:
         logger.warning("STP reconciliation failed", error=str(e))
         return StpReconciliation(error="STP data unavailable")
@@ -61,6 +89,8 @@ def get_sdps(token: str | None) -> SdpReconciliation:
             wfo = pool.submit(fetch_sdp_subscriptions, token)
             dds = pool.submit(fetch_dds_sdps)
         return reconcile_sdps(wfo.result(), dds.result())
+    except WfoUnauthorizedError:
+        return SdpReconciliation(error=NOT_AUTHORIZED)
     except Exception as e:
         logger.warning("SDP reconciliation failed", error=str(e))
         return SdpReconciliation(error="SDP data unavailable")
@@ -74,9 +104,11 @@ def get_spectrum(token: str | None) -> SpectrumView:
             agg = pool.submit(fetch_agg_circuits)
             circuits = pool.submit(fetch_circuits, token)
         return build_spectrum(sdps.result(), agg.result(), circuits.result())
+    except WfoUnauthorizedError:
+        return SpectrumView(error=NOT_AUTHORIZED)
     except Exception as e:
         logger.warning("building spectrum failed", error=str(e))
-        return SpectrumView(error="Spectrum data unavailable")
+        return SpectrumView(error="Spectrum unavailable: the aggregator proxy or WFO could not be reached.")
 
 
 def get_circuit_path(connection_id: str | None) -> list[PathSegment] | None:

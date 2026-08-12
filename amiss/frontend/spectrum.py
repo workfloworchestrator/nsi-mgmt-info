@@ -38,8 +38,6 @@ from amiss.frontend.util import (
 
 router = APIRouter()
 
-_UNAVAILABLE = "Spectrum unavailable: the aggregator proxy or WFO could not be reached."
-
 
 class SpectrumSort(str, Enum):
     sdp_name = "sdp_name"
@@ -57,7 +55,7 @@ def spectrum(request: Request, sort: str | None = None) -> list[AnyComponent]:
     """List the SDPs with the count and capacity of the circuits crossing each."""
     view = get_spectrum(token_from_request(request))
     if view.error:
-        return app_page(error_message(_UNAVAILABLE), title="Spectrum")
+        return app_page(error_message(view.error), title="Spectrum")
     return app_page(
         sort_form(SpectrumSortForm, root_url("/spectrum"), sort),
         spectrum_sdp_table(sort_rows(view.rows, sort)),
@@ -70,7 +68,7 @@ def spectrum_detail(request: Request, subscription_id: str) -> list[AnyComponent
     """Show the circuits crossing one SDP, re-fetched live by subscription id."""
     view = get_spectrum(token_from_request(request))
     if view.error:
-        return app_page(error_message(_UNAVAILABLE), title="Spectrum")
+        return app_page(error_message(view.error), title="Spectrum")
     sdp = next((row for row in view.rows if row.subscription_id == subscription_id), None)
     if sdp is None:
         return app_page(title=f"No SDP with id {subscription_id}.")
