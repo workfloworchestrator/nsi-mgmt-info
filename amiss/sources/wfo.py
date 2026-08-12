@@ -15,9 +15,9 @@
 """Query the WFO orchestrator GraphQL API and map results into render DTOs.
 
 The end-user's OIDC token is forwarded per request as a Bearer credential; the orchestrator validates
-it (SRAM userinfo) and gates queries on its read groups. Every fetch returns ``None`` on any failure
-(transport, non-200, non-JSON, GraphQL errors) so callers can tell "failed" apart from "empty"; a
-refusal of the caller's credentials instead raises :class:`WfoUnauthorizedError`.
+it against the provider's userinfo endpoint and gates queries on its read groups. Every fetch returns
+``None`` on any failure (transport, non-200, non-JSON, GraphQL errors) so callers can tell "failed"
+apart from "empty"; a refusal of the caller's credentials instead raises :class:`WfoUnauthorizedError`.
 """
 
 import json
