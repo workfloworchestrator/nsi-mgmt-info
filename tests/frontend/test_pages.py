@@ -15,6 +15,7 @@
 """Render tests for the circuits/STP/SDP pages: FastUI must serialize the DTO tables (mocked data)."""
 
 from contextlib import ExitStack
+from itertools import chain
 from unittest.mock import patch
 
 import pytest
@@ -106,6 +107,46 @@ def test_dashboard_shows_summary_cards():
     assert "Circuits" in response.text and "Activated" in response.text
     assert "Termination Points" in response.text and "backed by DDS" in response.text
     assert "Spectrum" in response.text and "SDPs in use" in response.text
+
+
+def _walk(node):
+    """Yield every component dict in a FastUI tree."""
+    match node:
+        case dict():
+            yield node
+            yield from chain.from_iterable(_walk(v) for v in node.values())
+        case list():
+            yield from chain.from_iterable(_walk(v) for v in node)
+
+
+def _circuit_card_headline(cards) -> str | None:
+    """Return the big number on the Circuits card: the sibling of its 'Circuits' heading."""
+    card = next(
+        (
+            n
+            for n in _walk(cards)
+            if any(c.get("text") == "Circuits" and c.get("type") == "Heading" for c in n.get("components", []))
+        ),
+        None,
+    )
+    headline = next((c for c in (card or {}).get("components", []) if "display-6" in (c.get("className") or "")), None)
+    return next((t.get("text") for t in (headline or {}).get("components", [])), None)
+
+
+def test_dashboard_circuit_headline_excludes_terminated():
+    """The headline is the current estate, so terminated circuits count in the breakdown only."""
+    circuits = [
+        CircuitRow(subscription_id="a", state="ACTIVATED"),
+        CircuitRow(subscription_id="b", state="FAILED"),
+        CircuitRow(subscription_id="c", state="TERMINATED"),
+        CircuitRow(subscription_id="d", state="TERMINATED"),
+    ]
+    with ExitStack() as stack:
+        for p in _dashboard_patches(fetch_circuits=circuits):
+            stack.enter_context(p)
+        cards = client.get("/api/").json()
+    headline = _circuit_card_headline(cards)
+    assert headline == "2", f"expected 2 of 4 (two terminated excluded), got {headline}"
 
 
 def test_dashboard_fetches_each_source_once():

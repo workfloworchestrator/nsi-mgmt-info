@@ -128,7 +128,9 @@ def _circuit_card(circuits: list[CircuitRow] | None) -> AnyComponent:
         ("Failed", buckets["failed"], Tone.BAD),
         ("Terminated", buckets["terminated"], Tone.NEUTRAL),
     ]
-    return _card("Circuits", "/circuits", len(circuits), lines, unavailable=False)
+    # The headline counts the circuits that still exist; terminated ones stay in the breakdown only,
+    # or the number would keep climbing with history and never reflect the current estate.
+    return _card("Circuits", "/circuits", len(circuits) - buckets["terminated"], lines, unavailable=False)
 
 
 def _reconcile_card(title: str, url: str, result: StpReconciliation | SdpReconciliation) -> AnyComponent:
