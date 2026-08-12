@@ -59,7 +59,12 @@ def _request_auth_kwargs() -> dict[str, Any]:
 
 
 def nsi_util_get_json(url: HttpUrl, queryparams: dict) -> bytes | None:
-    """Fetch JSON from a proxy endpoint; return the raw response body as bytes, or None on failure."""
+    """Fetch JSON from a proxy endpoint; return the raw response body as bytes, or None on failure.
+
+    A 401/403 is deliberately just another failure here, unlike on the WFO leg (which raises
+    ``WfoUnauthorizedError``): these requests carry AMISS's own identity, not the end user's, so a
+    refusal is a deployment fault affecting everyone and nothing the caller can act on.
+    """
     log = logger.bind()
 
     log.debug("SENDING HTTP REQUEST FOR JSON", url=str(url))

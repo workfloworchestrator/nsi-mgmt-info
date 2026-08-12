@@ -78,8 +78,9 @@ class WfoUnauthorizedError(Exception):
     """
 
 
-# oauth2-lib tags a refusal with an ``error_type`` extension and words the message "User is not
-# authenticated/authorized to ..."; the extension is authoritative, the message is the fallback.
+# A refusal observed from the orchestrator is HTTP 200 with, per error, an ``error_type`` extension
+# and the message "User is not authenticated" / "User is not authorized to query `x`". The extension
+# is authoritative; the message is checked only to survive an oauth2-lib that predates it.
 _AUTHZ_ERROR_TYPES = frozenset({"not_authenticated", "not_authorized"})
 
 
@@ -87,8 +88,7 @@ def _is_authz_error(errors: list) -> bool:
     """Return whether a GraphQL ``errors`` payload is a credentials refusal, not a real failure."""
     return any(
         (error.get("extensions") or {}).get("error_type") in _AUTHZ_ERROR_TYPES
-        # Underscores normalised so a bare "not_authenticated" message matches too.
-        or "not auth" in str(error.get("message", "")).replace("_", " ").lower()
+        or "not auth" in str(error.get("message", "")).lower()
         for error in errors
         if isinstance(error, dict)
     )

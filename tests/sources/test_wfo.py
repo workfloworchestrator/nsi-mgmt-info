@@ -204,15 +204,23 @@ class TestQueryWfo:
         [
             pytest.param(_FakeResponse(status_code=401), id="http-401"),
             pytest.param(_FakeResponse(status_code=403), id="http-403"),
-            pytest.param(
-                _FakeResponse(content=json.dumps({"errors": [{"message": "not_authenticated"}]}).encode()),
-                id="bare-underscored-message",
-            ),
+            # Verbatim from the dev orchestrator: HTTP 200, worded message, error_type extension.
             pytest.param(
                 _FakeResponse(
-                    content=json.dumps({"errors": [{"message": "User is not authorized to query `x`"}]}).encode()
+                    content=json.dumps(
+                        {
+                            "data": None,
+                            "errors": [
+                                {
+                                    "message": "User is not authenticated",
+                                    "path": ["subscriptions"],
+                                    "extensions": {"error_type": "not_authenticated"},
+                                }
+                            ],
+                        }
+                    ).encode()
                 ),
-                id="worded-message",
+                id="observed-not-authenticated",
             ),
             pytest.param(
                 _FakeResponse(
@@ -220,7 +228,13 @@ class TestQueryWfo:
                         {"errors": [{"message": "boom", "extensions": {"error_type": "not_authorized"}}]}
                     ).encode()
                 ),
-                id="error-type-extension",
+                id="error-type-extension-alone",
+            ),
+            pytest.param(
+                _FakeResponse(
+                    content=json.dumps({"errors": [{"message": "User is not authorized to query `x`"}]}).encode()
+                ),
+                id="message-alone-no-extension",
             ),
         ],
     )

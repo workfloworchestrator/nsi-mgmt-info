@@ -24,6 +24,9 @@ from amiss.sources.aggregator import AggCircuit, PathSegment
 from amiss.sources.reconcile import DdsSdp, DdsStp, ReconcileStatus
 from amiss.sources.wfo import CircuitRow, SdpMember, SdpSub, StpSub, WfoUnauthorizedError
 
+# Every accessor that reaches the WFO and returns a rows/error model.
+_ACCESSORS = ["get_circuits", "get_stps", "get_sdps", "get_spectrum"]
+
 
 def test_get_circuits_passthrough():
     rows = [CircuitRow(subscription_id="c1")]
@@ -106,7 +109,8 @@ def test_get_spectrum_source_failure_yields_error():
         assert data.get_spectrum("tok").error is not None
 
 
-def test_get_spectrum_never_raises_on_source_error():
+def test_get_spectrum_never_raises_on_aggregator_error():
+    """The aggregator is the one non-WFO source an accessor can fail on."""
     with (
         patch.object(data, "fetch_sdp_subscriptions", return_value=[]),
         patch.object(data, "fetch_circuits", return_value=[]),
@@ -141,27 +145,17 @@ def test_get_circuit_path_none_on_failure(fetch_kwargs):
         assert data.get_circuit_path("c1") is None
 
 
-def test_get_circuits_never_raises_on_source_error():
-    with patch.object(data, "fetch_circuits", side_effect=RuntimeError("mTLS misconfig")):
-        assert "could not be reached" in data.get_circuits("tok").error
+# Patch query_wfo rather than the individual fetches: every WFO fetch funnels through it, so an
+# accessor's other fetches cannot escape to the network and cost a real DNS lookup.
+@pytest.mark.parametrize("accessor", _ACCESSORS)
+def test_accessors_never_raise_on_source_error(accessor):
+    """The accessors back user-facing pages, so an unexpected source error degrades, never 500s."""
+    with patch.object(wfo, "query_wfo", side_effect=RuntimeError("mTLS misconfig")):
+        result = getattr(data, accessor)("tok")
+    assert result.error is not None and result.rows == []
 
 
-@pytest.mark.parametrize("accessor", ["get_circuits", "get_stps", "get_sdps", "get_spectrum"])
+@pytest.mark.parametrize("accessor", _ACCESSORS)
 def test_refused_credentials_are_reported_as_not_authorized(accessor):
-    # Patch query_wfo, not the individual fetches: every WFO fetch funnels through it, so an
-    # accessor's other fetches cannot escape to the network and cost a real DNS lookup.
     with patch.object(wfo, "query_wfo", side_effect=WfoUnauthorizedError):
         assert getattr(data, accessor)("tok").error == data.NOT_AUTHORIZED
-
-
-@pytest.mark.parametrize(
-    ("getter", "fetch_name"),
-    [
-        pytest.param(data.get_stps, "fetch_stp_subscriptions", id="stp"),
-        pytest.param(data.get_sdps, "fetch_sdp_subscriptions", id="sdp"),
-    ],
-)
-def test_reconcile_getter_never_raises_on_source_error(getter, fetch_name):
-    with patch.object(data, fetch_name, side_effect=RuntimeError("mTLS misconfig")):
-        result = getter("tok")
-    assert result.error is not None and result.rows == []
