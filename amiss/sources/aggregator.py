@@ -25,12 +25,12 @@ import json
 from collections.abc import Iterator
 
 import structlog
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, computed_field
 
 from amiss.nsi import nsi_util_get_json
 from amiss.settings import settings
-from amiss.sources.reconcile import normalize_stp_id, sdp_pair
-from amiss.sources.wfo import CircuitRow, SdpSub, circuit_state_bucket
+from amiss.sources.reconcile import end_label, normalize_stp_id, sdp_capacity, sdp_ends, sdp_pair
+from amiss.sources.wfo import CircuitRow, SdpSub, is_terminated, short_id
 
 logger = structlog.get_logger(__name__)
 
@@ -60,8 +60,13 @@ class CircuitOnSdp(BaseModel):
     description: str | None = None
     connection_id: str | None = None
     vlan: str | None = None
-    capacity: int | None = None
+    bandwidth: int | None = None
     status: str | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def short_id(self) -> str | None:
+        return short_id(self.subscription_id)
 
 
 class SpectrumRow(BaseModel):
@@ -72,8 +77,18 @@ class SpectrumRow(BaseModel):
     stp_a: str | None = None
     stp_z: str | None = None
     circuit_count: int = 0
-    total_capacity: int = 0
+    sdp_capacity: int | None = None  # the link's own size, the denominator of `utilisation`
+    total_capacity: int = 0  # the sum reserved by the circuits crossing it
     circuits: list[CircuitOnSdp] = []
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def utilisation(self) -> int | None:
+        """Percent of the link's capacity reserved, or ``None`` when the link's own capacity is unknown.
+
+        An int, not a ``'42%'`` string: the column has to sort numerically.
+        """
+        return round(100 * self.total_capacity / self.sdp_capacity) if self.sdp_capacity else None
 
 
 class SpectrumView(BaseModel):
@@ -84,6 +99,16 @@ class SpectrumView(BaseModel):
 
 
 UNATTRIBUTED_ID = "unattributed"
+
+
+def split_unattributed(rows: list[SpectrumRow]) -> tuple[list[SpectrumRow], SpectrumRow | None]:
+    """Split the real SDPs from the synthetic 'unattributed circuits' bucket appended to them.
+
+    The bucket is a pseudo-row with no SDP subscription behind it, so every consumer has to keep it
+    out of an SDP list and handle it separately.
+    """
+    real = [row for row in rows if row.subscription_id != UNATTRIBUTED_ID]
+    return real, next((row for row in rows if row.subscription_id == UNATTRIBUTED_ID), None)
 
 
 def _vlan_of(raw: str | None) -> str | None:
@@ -162,19 +187,21 @@ def _circuit_on_sdp(agg: AggCircuit, wfo: CircuitRow, pair: frozenset[str] | Non
         description=wfo.description,
         connection_id=wfo.connection_id,
         vlan=_vlan_on_sdp(agg, pair) if pair else None,
-        capacity=wfo.bandwidth,
+        bandwidth=wfo.bandwidth,
         status=wfo.state,
     )
 
 
 def _spectrum_row(sdp: SdpSub, pair: frozenset[str], members: list[_Backed]) -> SpectrumRow:
     stp_a, stp_z = tuple(sorted(pair))
+    end_a, end_z = sdp_ends(sdp, stp_a, stp_z)
     return SpectrumRow(
         subscription_id=sdp.subscription_id,
         sdp_name=sdp.sdp_name,
-        stp_a=stp_a,
-        stp_z=stp_z,
+        stp_a=end_label(end_a, stp_a),
+        stp_z=end_label(end_z, stp_z),
         circuit_count=len(members),
+        sdp_capacity=sdp_capacity(sdp),
         total_capacity=sum(wfo.bandwidth or 0 for _agg, wfo in members),
         circuits=[_circuit_on_sdp(agg, wfo, pair) for agg, wfo in members],
     )
@@ -201,7 +228,7 @@ def _wfo_backed_pairs(agg_circuits: list[AggCircuit], wfo_circuits: list[Circuit
     wfo_by_conn = {
         circuit.connection_id: circuit
         for circuit in wfo_circuits
-        if circuit.connection_id and circuit_state_bucket(circuit.state) != "terminated"
+        if circuit.connection_id and not is_terminated(circuit.state)
     }
     return [(agg, wfo_by_conn[agg.connection_id]) for agg in agg_circuits if agg.connection_id in wfo_by_conn]
 

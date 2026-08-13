@@ -27,7 +27,7 @@ from starlette.requests import Request
 
 from amiss.data import NOT_AUTHORIZED
 from amiss.frontend.util import app_page, error_message, root_url, token_from_request
-from amiss.sources.aggregator import UNATTRIBUTED_ID, SpectrumView, build_spectrum, fetch_agg_circuits
+from amiss.sources.aggregator import SpectrumView, build_spectrum, fetch_agg_circuits, split_unattributed
 from amiss.sources.dds_topology import fetch_dds_sdps, fetch_dds_stps
 from amiss.sources.reconcile import (
     ReconcileStatus,
@@ -148,11 +148,10 @@ def _reconcile_card(title: str, url: str, result: StpReconciliation | SdpReconci
 def _spectrum_card(view: SpectrumView) -> AnyComponent:
     if view.error:
         return _card("Spectrum", "/spectrum", None, [], unavailable=True)
-    sdps = [row for row in view.rows if row.subscription_id != UNATTRIBUTED_ID]
-    unattributed = next((row.circuit_count for row in view.rows if row.subscription_id == UNATTRIBUTED_ID), 0)
+    sdps, unattributed = split_unattributed(view.rows)
     lines = [
         ("SDPs in use", sum(1 for row in sdps if row.circuit_count), Tone.GOOD),
-        ("unattributed circuits", unattributed, Tone.BAD),
+        ("unattributed circuits", unattributed.circuit_count if unattributed else 0, Tone.BAD),
         ("idle SDPs", sum(1 for row in sdps if not row.circuit_count), Tone.NEUTRAL),
     ]
     return _card("Spectrum", "/spectrum", len(sdps), lines, unavailable=False)

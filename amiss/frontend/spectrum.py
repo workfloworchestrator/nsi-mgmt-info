@@ -19,14 +19,12 @@ from enum import Enum
 from fastapi import APIRouter
 from fastui import AnyComponent, FastUI
 from fastui import components as c
-from fastui.events import GoToEvent
 from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 from amiss.data import get_spectrum
 from amiss.frontend.util import (
     app_page,
-    button_row,
     error_message,
     root_url,
     sort_form,
@@ -35,6 +33,7 @@ from amiss.frontend.util import (
     spectrum_sdp_table,
     token_from_request,
 )
+from amiss.sources.aggregator import SpectrumRow, split_unattributed
 
 router = APIRouter()
 
@@ -42,40 +41,41 @@ router = APIRouter()
 class SpectrumSort(str, Enum):
     sdp_name = "sdp_name"
     stp_a = "stp_a"
+    stp_z = "stp_z"
     circuit_count = "circuit_count"
     total_capacity = "total_capacity"
+    utilisation = "utilisation"
 
 
 class SpectrumSortForm(BaseModel):
     sort: SpectrumSort | None = Field(default=None, title="Sort by")
 
 
+def _unattributed_section(row: SpectrumRow | None) -> list[AnyComponent]:
+    """List the circuits that cross no known SDP, if any.
+
+    They have no SDP subscription to drill into, so they are shown here rather than behind a link
+    that would have nowhere to point.
+    """
+    if row is None:
+        return []
+    return [
+        c.Heading(text="Unattributed circuits", level=4),
+        c.Markdown(text="_Multi-domain circuits whose path crosses no SDP known to the WFO._"),
+        spectrum_circuit_table(row.circuits),
+    ]
+
+
 @router.get("", response_model=FastUI, response_model_exclude_none=True)
 def spectrum(request: Request, sort: str | None = None) -> list[AnyComponent]:
-    """List the SDPs with the count and capacity of the circuits crossing each."""
+    """List the SDPs with the count, reserved capacity and utilisation of the circuits crossing each."""
     view = get_spectrum(token_from_request(request))
     if view.error:
         return app_page(error_message(view.error), title="Spectrum")
+    sdps, unattributed = split_unattributed(view.rows)
     return app_page(
         sort_form(SpectrumSortForm, root_url("/spectrum"), sort),
-        spectrum_sdp_table(sort_rows(view.rows, sort)),
+        spectrum_sdp_table(sort_rows(sdps, sort)),
+        *_unattributed_section(unattributed),
         title="Spectrum",
-    )
-
-
-@router.get("/{subscription_id}/", response_model=FastUI, response_model_exclude_none=True)
-def spectrum_detail(request: Request, subscription_id: str) -> list[AnyComponent]:
-    """Show the circuits crossing one SDP, re-fetched live by subscription id."""
-    view = get_spectrum(token_from_request(request))
-    if view.error:
-        return app_page(error_message(view.error), title="Spectrum")
-    sdp = next((row for row in view.rows if row.subscription_id == subscription_id), None)
-    if sdp is None:
-        return app_page(title=f"No SDP with id {subscription_id}.")
-    heading = f"{sdp.stp_a} <-> {sdp.stp_z}" if sdp.stp_a else (sdp.sdp_name or "")
-    return app_page(
-        button_row([c.Button(text="Back", on_click=GoToEvent(url=root_url("/spectrum")), class_name="+ ms-2")]),
-        c.Heading(text=heading, level=4),
-        spectrum_circuit_table(sdp.circuits),
-        title=f"SDP {sdp.sdp_name}",
     )

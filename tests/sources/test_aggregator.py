@@ -35,6 +35,14 @@ def _wfo(connection_id, state="ACTIVATED", description=None, bandwidth=None):
     )
 
 
+def _agg(connection_id, sample):
+    """An aggregator circuit built from one of the raw reservation samples below."""
+    return AggCircuit(
+        connection_id=connection_id,
+        segments=[PathSegment(source_stp=seg["sourceSTP"], dest_stp=seg["destSTP"]) for seg in sample["segments"]],
+    )
+
+
 # A three-segment multi-domain path: the middle segment is the inter-domain fiber, whose two ends
 # (manlan.moxy-1, netherlight.moxy-1) are the crossing SDP's STPs. Segment ids carry no urn prefix
 # (stripped by the aggregator) but do carry ?vlan=.
@@ -111,22 +119,50 @@ class TestFetch:
 class TestBuildSpectrum:
     def test_attributes_circuit_and_uses_wfo_fields_with_path_vlan(self):
         # the WFO is authoritative for identity/label/capacity; only the VLAN comes from the path
-        circuit = AggCircuit(
-            connection_id="conn-1",
-            segments=[PathSegment(source_stp=s["sourceSTP"], dest_stp=s["destSTP"]) for s in AMS_NYC["segments"]],
-        )
+        circuit = _agg("conn-1", AMS_NYC)
         wfo = _wfo("conn-1", description="fresh-wfo-desc", bandwidth=1000)
         view = build_spectrum([MOXY_SDP], [circuit], [wfo])
         assert view.error is None and len(view.rows) == 1
         sdp = view.rows[0]
         assert sdp.subscription_id == "d1" and sdp.circuit_count == 1
         assert sdp.total_capacity == 1000  # from WFO bandwidth, not the aggregator capacity
-        # normalized pair sorted -> stp_a/stp_z
+        # normalized pair sorted -> stp_a/stp_z; MOXY_SDP's members are unnamed, so the id shows
         assert sdp.stp_a == "internet2.edu:2025:ana:manlan.moxy-1"
         # WFO wins for description; VLAN still comes from the crossing segment end
         assert sdp.circuits[0].description == "fresh-wfo-desc"
         assert sdp.circuits[0].connection_id == "conn-1" and sdp.circuits[0].vlan == "481"
         assert sdp.circuits[0].subscription_id == "s-conn-1"  # carries the WFO id for the cross-link
+        assert sdp.circuits[0].bandwidth == 1000  # from the WFO, not the aggregator segment capacity
+
+    def test_ends_are_shown_by_name_where_the_wfo_has_one(self):
+        named = MOXY_SDP.model_copy(
+            update={
+                "stps": [
+                    member.model_copy(update={"stp_name": f"Port {index}"})
+                    for index, member in enumerate(MOXY_SDP.stps)
+                ]
+            }
+        )
+        circuit = _agg("conn-1", AMS_NYC)
+        row = build_spectrum([named], [circuit], [_wfo("conn-1")]).rows[0]
+        assert {row.stp_a, row.stp_z} == {"Port 0", "Port 1"}
+
+    @pytest.mark.parametrize(
+        ("member_capacity", "reserved", "expected"),
+        [
+            pytest.param(4000, 1000, 25, id="quarter-full"),
+            pytest.param(1000, 1000, 100, id="full"),
+            pytest.param(None, 1000, None, id="link-capacity-unknown"),
+            pytest.param(0, 1000, None, id="link-capacity-zero"),
+        ],
+    )
+    def test_utilisation_is_the_percentage_of_the_link_reserved(self, member_capacity, reserved, expected):
+        sdp = MOXY_SDP.model_copy(
+            update={"stps": [member.model_copy(update={"capacity": member_capacity}) for member in MOXY_SDP.stps]}
+        )
+        circuit = _agg("conn-1", AMS_NYC)
+        row = build_spectrum([sdp], [circuit], [_wfo("conn-1", bandwidth=reserved)]).rows[0]
+        assert row.utilisation == expected
 
     def test_circuit_only_touching_one_end_is_not_attributed(self):
         # touches manlan.moxy-1 but not netherlight.moxy-1 -> not on the SDP (subset test, not "any end")
@@ -144,10 +180,7 @@ class TestBuildSpectrum:
         assert not any(row.subscription_id == UNATTRIBUTED_ID for row in view.rows)
 
     def test_multi_segment_circuit_on_no_known_sdp_is_unattributed(self):
-        circuit = AggCircuit(
-            connection_id="conn-2",
-            segments=[PathSegment(source_stp=s["sourceSTP"], dest_stp=s["destSTP"]) for s in ORPHAN["segments"]],
-        )
+        circuit = _agg("conn-2", ORPHAN)
         view = build_spectrum([MOXY_SDP], [circuit], [_wfo("conn-2", bandwidth=500)])
         unattributed = next(row for row in view.rows if row.subscription_id == UNATTRIBUTED_ID)
         assert unattributed.circuit_count == 1 and unattributed.total_capacity == 500
@@ -164,10 +197,7 @@ class TestBuildSpectrum:
         ],
     )
     def test_only_non_terminated_wfo_backed_circuits_are_shown(self, wfo, expected_count):
-        circuit = AggCircuit(
-            connection_id="conn-1",
-            segments=[PathSegment(source_stp=s["sourceSTP"], dest_stp=s["destSTP"]) for s in AMS_NYC["segments"]],
-        )
+        circuit = _agg("conn-1", AMS_NYC)
         view = build_spectrum([MOXY_SDP], [circuit], wfo)
         assert view.rows[0].circuit_count == expected_count
 

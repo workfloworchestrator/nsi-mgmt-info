@@ -25,7 +25,7 @@ from amiss import app
 from amiss.data import NOT_AUTHORIZED, CircuitList
 from amiss.frontend.circuits import _in_tab
 from amiss.frontend.home import Tone, _stat_line
-from amiss.sources.aggregator import CircuitOnSdp, PathSegment, SpectrumRow, SpectrumView
+from amiss.sources.aggregator import UNATTRIBUTED_ID, CircuitOnSdp, PathSegment, SpectrumRow, SpectrumView
 from amiss.sources.reconcile import DdsStp, ReconcileStatus, SdpReconciliation, SdpRow, StpReconciliation, StpRow
 from amiss.sources.wfo import CircuitRow, StpSub, WfoUnauthorizedError
 
@@ -274,23 +274,32 @@ def test_dashboard_says_not_authorized_rather_than_unavailable():
     assert NOT_AUTHORIZED in response.text
 
 
+_CIRCUIT_ON_SDP = CircuitOnSdp(
+    subscription_id="sub-1",
+    description="AMS-NYC",
+    connection_id="conn-1",
+    vlan="100",
+    bandwidth=1000,
+    status="ACTIVATED",
+)
+
 _SDP = SpectrumRow(
     subscription_id="d1",
     sdp_name="A<->B",
     stp_a="dom:portA",
     stp_z="dom:portB",
     circuit_count=1,
+    sdp_capacity=4000,
     total_capacity=1000,
-    circuits=[
-        CircuitOnSdp(
-            subscription_id="sub-1",
-            description="AMS-NYC",
-            connection_id="conn-1",
-            vlan="100",
-            capacity=1000,
-            status="ACTIVATED",
-        )
-    ],
+    circuits=[_CIRCUIT_ON_SDP],
+)
+
+_UNATTRIBUTED = SpectrumRow(
+    subscription_id=UNATTRIBUTED_ID,
+    sdp_name="Unattributed circuits",
+    circuit_count=1,
+    total_capacity=1000,
+    circuits=[CircuitOnSdp(subscription_id="sub-9", description="ORPHAN", bandwidth=1000)],
 )
 
 
@@ -299,22 +308,22 @@ def test_spectrum_page_renders():
         response = client.get("/api/spectrum")
     assert response.status_code == 200
     assert "A<->B" in response.text and "dom:portA" in response.text
+    # the SDP links to its own page, not to a spectrum-only drill-in
+    assert "/sdp/{subscription_id}/" in response.text
 
 
-def test_spectrum_detail_shows_circuits_on_sdp():
+def test_spectrum_page_shows_utilisation():
     with patch("amiss.frontend.spectrum.get_spectrum", return_value=SpectrumView(rows=[_SDP])):
-        response = client.get("/api/spectrum/d1/")
-    assert response.status_code == 200
-    assert "AMS-NYC" in response.text and "conn-1" in response.text
-    # cross-link to the circuit detail (FastUI stores the per-row URL template)
-    assert "/circuits/{subscription_id}/" in response.text
+        response = client.get("/api/spectrum")
+    assert '"utilisation":25' in response.text.replace(" ", "")
 
 
-def test_spectrum_detail_not_found():
-    with patch("amiss.frontend.spectrum.get_spectrum", return_value=SpectrumView(rows=[])):
-        response = client.get("/api/spectrum/nope/")
+def test_spectrum_page_lists_unattributed_circuits_inline():
+    """The unattributed bucket has no SDP subscription, so /spectrum shows it rather than linking away."""
+    with patch("amiss.frontend.spectrum.get_spectrum", return_value=SpectrumView(rows=[_SDP, _UNATTRIBUTED])):
+        response = client.get("/api/spectrum")
     assert response.status_code == 200
-    assert "No SDP with id" in response.text
+    assert "Unattributed circuits" in response.text and "ORPHAN" in response.text
 
 
 def test_spectrum_page_shows_the_reason_it_has_no_data():

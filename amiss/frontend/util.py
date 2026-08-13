@@ -157,19 +157,24 @@ def sort_form(form_model: type[BaseModel], submit_url: str, current: str | None)
     )
 
 
+# Every list table leads with the 8-char subscription id, linking to that row's detail page. Rows
+# without a subscription (an STP/SDP the DDS knows but the WFO does not) render it as an inert '—':
+# FastUI drops a go-to event whose url interpolates a missing field.
+def _id_column(detail_path: str) -> DisplayLookup:
+    return DisplayLookup(field="short_id", title="ID", on_click=GoToEvent(url=root_url(detail_path)))
+
+
 def circuit_table(circuits: list[CircuitRow]) -> c.Table:
     return c.Table(
         data_model=CircuitRow,
         data=circuits,
         columns=[
-            DisplayLookup(
-                field="short_id", title="ID", on_click=GoToEvent(url=root_url("/circuits/{subscription_id}/"))
-            ),
+            _id_column("/circuits/{subscription_id}/"),
             DisplayLookup(field="description"),
             DisplayLookup(field="start_time"),
             DisplayLookup(field="source", title="Source"),
             DisplayLookup(field="dest", title="Destination"),
-            DisplayLookup(field="bandwidth", title="BW"),
+            DisplayLookup(field="bandwidth", title="Bandwidth"),
             DisplayLookup(field="state"),
             DisplayLookup(field="created_by_name", title="Created By"),
         ],
@@ -182,10 +187,12 @@ def stp_table(stps: list[StpRow]) -> c.Table:
         data_model=StpRow,
         data=stps,
         columns=[
-            DisplayLookup(field="stp_id"),
-            DisplayLookup(field="vlan_range"),
+            _id_column("/stp/{subscription_id}/"),
             DisplayLookup(field="description"),
-            DisplayLookup(field="subscription_id"),
+            DisplayLookup(field="network", title="Network"),
+            DisplayLookup(field="port", title="Port"),
+            DisplayLookup(field="vlan_range", title="VLANs"),
+            DisplayLookup(field="capacity", title="Capacity"),
             DisplayLookup(field="status"),
         ],
         class_name="+ small",
@@ -197,11 +204,12 @@ def sdp_table(sdps: list[SdpRow]) -> c.Table:
         data_model=SdpRow,
         data=sdps,
         columns=[
-            DisplayLookup(field="stp_a_id"),
-            DisplayLookup(field="stp_z_id"),
-            DisplayLookup(field="vlan_range"),
+            _id_column("/sdp/{subscription_id}/"),
             DisplayLookup(field="description"),
-            DisplayLookup(field="subscription_id"),
+            DisplayLookup(field="stp_a_name", title="STP A"),
+            DisplayLookup(field="stp_z_name", title="STP Z"),
+            DisplayLookup(field="vlan_range", title="VLANs"),
+            DisplayLookup(field="capacity", title="Capacity"),
             DisplayLookup(field="status"),
         ],
         class_name="+ small",
@@ -213,13 +221,13 @@ def spectrum_sdp_table(rows: list[SpectrumRow]) -> c.Table:
         data_model=SpectrumRow,
         data=rows,
         columns=[
-            DisplayLookup(
-                field="sdp_name", title="SDP", on_click=GoToEvent(url=root_url("/spectrum/{subscription_id}/"))
-            ),
-            DisplayLookup(field="stp_a"),
-            DisplayLookup(field="stp_z"),
+            DisplayLookup(field="sdp_name", title="SDP", on_click=GoToEvent(url=root_url("/sdp/{subscription_id}/"))),
+            DisplayLookup(field="stp_a", title="STP A"),
+            DisplayLookup(field="stp_z", title="STP Z"),
             DisplayLookup(field="circuit_count", title="Circuits"),
-            DisplayLookup(field="total_capacity", title="Capacity"),
+            DisplayLookup(field="sdp_capacity", title="Capacity"),
+            DisplayLookup(field="total_capacity", title="Reserved"),
+            DisplayLookup(field="utilisation", title="Used %"),
         ],
         class_name="+ small",
     )
@@ -230,11 +238,12 @@ def spectrum_circuit_table(circuits: list[CircuitOnSdp]) -> c.Table:
         data_model=CircuitOnSdp,
         data=circuits,
         columns=[
-            DisplayLookup(field="description", on_click=GoToEvent(url=root_url("/circuits/{subscription_id}/"))),
-            DisplayLookup(field="connection_id"),
-            DisplayLookup(field="vlan"),
-            DisplayLookup(field="capacity"),
+            _id_column("/circuits/{subscription_id}/"),
+            DisplayLookup(field="description"),
+            DisplayLookup(field="vlan", title="VLAN"),
+            DisplayLookup(field="bandwidth", title="Bandwidth"),
             DisplayLookup(field="status"),
+            DisplayLookup(field="connection_id"),
         ],
         class_name="+ small",
     )
