@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from collections.abc import Collection
 from typing import Any
 
 from fastui import AnyComponent
@@ -22,7 +23,7 @@ from starlette.requests import Request
 
 from amiss.settings import settings
 from amiss.sources.aggregator import CircuitOnSdp, PathSegment, SpectrumRow
-from amiss.sources.reconcile import SdpRow, StpRow
+from amiss.sources.reconcile import ReconcileStatus, SdpRow, StpRow
 from amiss.sources.wfo import CircuitRow
 
 # do not know why, but otherwise FastUI will complain
@@ -139,6 +140,57 @@ def _sort_key(row: object, field: str) -> tuple[int, Any]:
 def sort_rows[T](rows: list[T], sort: str | None) -> list[T]:
     """Sort rows by the ``sort`` attribute (missing values last); unsorted when ``sort`` is None."""
     return sorted(rows, key=lambda row: _sort_key(row, sort)) if sort else rows
+
+
+# (key, label, path) per tab. The path doubles as the sort form's submit_url, so sorting stays in-tab.
+type Tabs = tuple[tuple[str, str, str], ...]
+
+
+def tab_links(tabs: Tabs) -> AnyComponent:
+    """Build the tab bar of a tabbed list page.
+
+    The first tab's path is the page's base path, which would prefix-match every other tab, so it is
+    matched exactly; FastUI marks the active tab by matching these patterns against the current URL.
+    """
+    base = tabs[0][2]
+    return c.LinkList(
+        links=[
+            c.Link(
+                components=[c.Text(text=label)],
+                on_click=GoToEvent(url=root_url(path)),
+                active=(root_url(path) if path == base else f"startswith:{root_url(path)}"),
+            )
+            for _key, label, path in tabs
+        ],
+        mode="tabs",
+        class_name="+ mb-4",
+    )
+
+
+def tab_path(tabs: Tabs, tab: str) -> str:
+    return next(path for key, _label, path in tabs if key == tab)
+
+
+# The status each tab of /stp and /sdp holds, keyed by tab key; "all" (no status) is the default tab,
+# because the whole inventory is the usual reason to open these pages.
+_RECONCILE_TABS = (
+    ("all", "All", "", None),
+    ("in_both", "Backed by DDS", "/backed", ReconcileStatus.IN_BOTH),
+    ("missing_in_dds", "Not in DDS", "/missing", ReconcileStatus.MISSING_IN_DDS),
+    ("dds_only", "DDS only", "/dds-only", ReconcileStatus.DDS_ONLY),
+)
+_TAB_STATUS = {key: status for key, _label, _suffix, status in _RECONCILE_TABS}
+
+
+def reconcile_tabs(base: str) -> Tabs:
+    """Build the status tabs of a reconciliation page, rooted at ``base`` (``/stp`` or ``/sdp``)."""
+    return tuple((key, label, f"{base}{suffix}") for key, label, suffix, _status in _RECONCILE_TABS)
+
+
+def in_tab(row: StpRow | SdpRow, tab: str) -> bool:
+    """Whether a reconciled row belongs in the given status tab (the 'all' tab holds everything)."""
+    status = _TAB_STATUS[tab]
+    return status is None or row.status is status
 
 
 def sort_form(form_model: type[BaseModel], submit_url: str, current: str | None) -> AnyComponent:
@@ -268,3 +320,17 @@ def segment_table(segments: list[PathSegment]) -> c.Table:
 def button_row(buttons: list[c.Button]) -> c.Div:
     # gap: between elements, py: padding y-axis
     return c.Div(components=buttons, class_name="d-flex flex-row gap-1 py-3")
+
+
+def back_button(path: str) -> c.Div:
+    """Build the Back button every detail page opens with."""
+    return button_row([c.Button(text="Back", on_click=GoToEvent(url=root_url(path)), class_name="+ ms-2")])
+
+
+def detail_fields(model: type[BaseModel], exclude: Collection[str] = ()) -> list[DisplayLookup]:
+    """Every field of a row model, for a detail page.
+
+    Computed fields are not in ``model_fields``, so the list-only ones a table derives (``short_id``,
+    ``network``/``port``) drop out for free; ``exclude`` is for stored fields the list shows instead.
+    """
+    return [DisplayLookup(field=name) for name in model.model_fields if name not in exclude]

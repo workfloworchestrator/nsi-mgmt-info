@@ -96,6 +96,40 @@ def get_sdps(token: str | None) -> SdpReconciliation:
         return SdpReconciliation(error="SDP data unavailable")
 
 
+def get_stp_detail(token: str | None) -> tuple[StpReconciliation, CircuitList]:
+    """Return the reconciled STP rows and the circuits, for the STP detail page.
+
+    Two independent legs, each keeping its own ``error``, so the page degrades per section: the STP's
+    own fields still render when only the circuit list could not be fetched.
+    """
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        stps = pool.submit(get_stps, token)
+        circuits = pool.submit(get_circuits, token)
+    return stps.result(), circuits.result()
+
+
+def get_sdp_detail(token: str | None) -> tuple[SdpReconciliation, SpectrumView]:
+    """Return the reconciled SDP rows and the spectrum view, for the SDP detail page.
+
+    Fetches each upstream exactly once and composes both views from the shared results (as the
+    dashboard does); calling ``get_sdps`` and ``get_spectrum`` instead would issue the same SDP
+    subscription query twice, and a WFO round-trip is the dominant cost of the page.
+    """
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            sdp_subs = pool.submit(fetch_sdp_subscriptions, token)
+            dds_sdps = pool.submit(fetch_dds_sdps)
+            agg = pool.submit(fetch_agg_circuits)
+            circuits = pool.submit(fetch_circuits, token)
+        sdps = sdp_subs.result()
+        return reconcile_sdps(sdps, dds_sdps.result()), build_spectrum(sdps, agg.result(), circuits.result())
+    except WfoUnauthorizedError:
+        return SdpReconciliation(error=NOT_AUTHORIZED), SpectrumView(error=NOT_AUTHORIZED)
+    except Exception as e:
+        logger.warning("building the SDP detail failed", error=str(e))
+        return SdpReconciliation(error="SDP data unavailable"), SpectrumView(error="Spectrum unavailable")
+
+
 def get_spectrum(token: str | None) -> SpectrumView:
     """Return the SDPs with the WFO-backed circuits crossing them (WFO SDPs + circuits + aggregator, concurrent)."""
     try:

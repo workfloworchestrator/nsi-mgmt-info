@@ -17,21 +17,22 @@ from enum import Enum
 from fastapi import APIRouter
 from fastui import AnyComponent, FastUI
 from fastui import components as c
-from fastui.components.display import DisplayLookup
-from fastui.events import GoToEvent
 from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 from amiss.data import get_circuit_path, get_circuits
 from amiss.frontend.util import (
     app_page,
-    button_row,
+    back_button,
     circuit_table,
+    detail_fields,
     error_message,
     root_url,
     segment_table,
     sort_form,
     sort_rows,
+    tab_links,
+    tab_path,
     token_from_request,
 )
 from amiss.sources.aggregator import PathSegment
@@ -46,6 +47,7 @@ class CircuitSort(str, Enum):
     start_time = "start_time"
     source = "source"
     dest = "dest"
+    bandwidth = "bandwidth"
     created_by = "created_by"
 
 
@@ -53,7 +55,6 @@ class CircuitSortForm(BaseModel):
     sort: CircuitSort | None = Field(default=None, title="Sort by")
 
 
-# (tab key, label, path). The path doubles as the sort form's submit_url so sorting stays in-tab.
 CIRCUIT_TABS = (
     ("activated", "Activated", "/circuits"),
     ("failed", "Failed", "/circuits/failed"),
@@ -67,35 +68,14 @@ def _in_tab(circuit: CircuitRow, tab: str) -> bool:
     return tab == "all" or circuit_state_bucket(circuit.state) == tab
 
 
-def _tabs() -> AnyComponent:
-    # FastUI marks the active tab by matching each link's `active` pattern against the current URL.
-    return c.LinkList(
-        links=[
-            c.Link(
-                components=[c.Text(text=label)],
-                on_click=GoToEvent(url=root_url(path)),
-                # the base path would prefix-match every tab, so match it exactly
-                active=(root_url(path) if path == "/circuits" else f"startswith:{root_url(path)}"),
-            )
-            for _key, label, path in CIRCUIT_TABS
-        ],
-        mode="tabs",
-        class_name="+ mb-4",
-    )
-
-
-def _tab_path(tab: str) -> str:
-    return next(path for key, _label, path in CIRCUIT_TABS if key == tab)
-
-
 def _circuits_view(request: Request, tab: str, sort: str | None) -> list[AnyComponent]:
-    path = _tab_path(tab)
+    path = tab_path(CIRCUIT_TABS, tab)
     result = get_circuits(token_from_request(request))
     if result.error:
-        return app_page(_tabs(), error_message(result.error), title="Circuits")
+        return app_page(tab_links(CIRCUIT_TABS), error_message(result.error), title="Circuits")
     circuits_in_tab = sort_rows([row for row in result.rows if _in_tab(row, tab)], sort)
     return app_page(
-        _tabs(),
+        tab_links(CIRCUIT_TABS),
         sort_form(CircuitSortForm, root_url(path), sort),
         circuit_table(circuits_in_tab),
         title="Circuits",
@@ -145,14 +125,10 @@ def circuit_details(request: Request, subscription_id: str) -> list[AnyComponent
     if circuit is None:
         return app_page(title=f"No circuit with id {subscription_id}.")
     path = get_circuit_path(circuit.connection_id) if circuit.connection_id else []
-    # detail shows every field except the list-only helpers (short_id, and the merged source/dest —
-    # the raw source_stp/source_vlan/dest_stp/dest_vlan are shown instead). CircuitRow.created_by_name
-    # is likewise list-only and needs no exclusion here: model_fields holds no computed fields.
-    list_only = {"short_id", "source", "dest"}
-    detail_fields = [DisplayLookup(field=name) for name in CircuitRow.model_fields if name not in list_only]
     return app_page(
-        button_row([c.Button(text="Back", on_click=GoToEvent(url=root_url("/circuits")), class_name="+ ms-2")]),
-        c.Details(data=circuit, fields=detail_fields),
+        back_button("/circuits"),
+        # the merged source/dest are list-only; the detail shows the raw stp/vlan fields instead
+        c.Details(data=circuit, fields=detail_fields(CircuitRow, exclude={"source", "dest"})),
         c.Heading(text="Path", level=4),
         _path_section(path),
         title=f"Circuit {circuit.description}",

@@ -371,3 +371,163 @@ def test_reconciliation_page_shows_error(target, reconciliation, path):
     with patch(target, return_value=reconciliation):
         response = client.get(path)
     assert response.status_code == 200 and reconciliation.error in response.text
+
+
+_STP_ROWS = [
+    StpRow(subscription_id="stp-1", stp_id="dom:portA", capacity=100000, status=ReconcileStatus.IN_BOTH),
+    StpRow(stp_id="dom:portB", status=ReconcileStatus.DDS_ONLY),
+    StpRow(subscription_id="stp-3", stp_id="dom:portC", status=ReconcileStatus.MISSING_IN_DDS),
+]
+
+_SDP_ROWS = [
+    SdpRow(subscription_id="sdp-1", stp_a_id="dom:portA", stp_z_id="other:portZ", status=ReconcileStatus.IN_BOTH),
+    SdpRow(stp_a_id="dom:portB", stp_z_id="other:portY", status=ReconcileStatus.DDS_ONLY),
+]
+
+
+_STPS, _SDPS = "amiss.frontend.stp.get_stps", "amiss.frontend.sdp.get_sdps"
+_STP_RECONCILIATION = StpReconciliation(rows=_STP_ROWS)
+_SDP_RECONCILIATION = SdpReconciliation(rows=_SDP_ROWS)
+
+
+@pytest.mark.parametrize(
+    ("target", "result", "path", "present", "absent"),
+    [
+        pytest.param(_STPS, _STP_RECONCILIATION, "/api/stp", "dom:portA", "no-such-port", id="stp-all"),
+        pytest.param(_STPS, _STP_RECONCILIATION, "/api/stp/backed", "dom:portA", "dom:portB", id="stp-backed"),
+        pytest.param(_STPS, _STP_RECONCILIATION, "/api/stp/dds-only", "dom:portB", "dom:portA", id="stp-dds-only"),
+        pytest.param(_STPS, _STP_RECONCILIATION, "/api/stp/missing", "dom:portC", "dom:portA", id="stp-missing"),
+        pytest.param(_SDPS, _SDP_RECONCILIATION, "/api/sdp", "other:portZ", "no-such-port", id="sdp-all"),
+        pytest.param(_SDPS, _SDP_RECONCILIATION, "/api/sdp/dds-only", "dom:portB", "other:portZ", id="sdp-dds-only"),
+    ],
+)
+def test_status_tabs_filter(target, result, path, present, absent):
+    with patch(target, return_value=result):
+        response = client.get(path)
+    assert response.status_code == 200
+    assert present in response.text and absent not in response.text
+
+
+@pytest.mark.parametrize(
+    ("target", "result", "path", "link"),
+    [
+        pytest.param(
+            "amiss.frontend.stp.get_stps",
+            StpReconciliation(rows=_STP_ROWS),
+            "/api/stp",
+            "/stp/{subscription_id}/",
+            id="stp",
+        ),
+        pytest.param(
+            "amiss.frontend.sdp.get_sdps",
+            SdpReconciliation(rows=_SDP_ROWS),
+            "/api/sdp",
+            "/sdp/{subscription_id}/",
+            id="sdp",
+        ),
+    ],
+)
+def test_reconciliation_list_links_the_short_id_to_the_detail_page(target, result, path, link):
+    with patch(target, return_value=result):
+        response = client.get(path)
+    # the 8-char id is shown and carries the row's detail link; the full uuid is not in the table
+    assert '"short_id"' in response.text and link in response.text
+
+
+def test_stp_detail_lists_only_the_circuits_on_that_stp():
+    """Matching is on the endpoint's STP id, and terminated circuits are left out.
+
+    ``source_stp``/``dest_stp`` carry the STP's *name* whenever it has one (which is what the circuits
+    table shows), so a match against those finds nothing on real data.
+    """
+    circuits = CircuitList(
+        rows=[
+            CircuitRow(
+                subscription_id="c1",
+                description="ON-PORT-A",
+                state="ACTIVATED",
+                source_stp="University of Amsterdam",
+                source_stp_id="urn:ogf:network:dom:portA",
+                dest_stp="Somewhere Else",
+                dest_stp_id="dom:portZ",
+            ),
+            CircuitRow(
+                subscription_id="c2",
+                description="ELSEWHERE",
+                state="ACTIVATED",
+                source_stp="Other Port",
+                source_stp_id="dom:portQ",
+                dest_stp="Somewhere Else",
+                dest_stp_id="dom:portZ",
+            ),
+            CircuitRow(
+                subscription_id="c3",
+                description="OLD-ON-PORT-A",
+                state="TERMINATED",
+                source_stp="University of Amsterdam",
+                source_stp_id="urn:ogf:network:dom:portA",
+                dest_stp="Somewhere Else",
+                dest_stp_id="dom:portZ",
+            ),
+        ]
+    )
+    with patch("amiss.frontend.stp.get_stp_detail", return_value=(StpReconciliation(rows=_STP_ROWS), circuits)):
+        response = client.get("/api/stp/stp-1/")
+    assert response.status_code == 200
+    assert "ON-PORT-A" in response.text
+    assert "ELSEWHERE" not in response.text  # different port
+    assert "OLD-ON-PORT-A" not in response.text  # right port, but terminated
+
+
+def test_stp_detail_says_why_the_circuits_are_missing():
+    """A failed circuits fetch must not read as 'no circuits use this port'."""
+    with patch(
+        "amiss.frontend.stp.get_stp_detail",
+        return_value=(StpReconciliation(rows=_STP_ROWS), CircuitList(error="WFO down")),
+    ):
+        response = client.get("/api/stp/stp-1/")
+    assert response.status_code == 200 and "WFO down" in response.text
+
+
+def test_sdp_detail_shows_circuits_on_sdp():
+    spectrum = SpectrumView(rows=[SpectrumRow(subscription_id="sdp-1", circuits=[_CIRCUIT_ON_SDP])])
+    with patch("amiss.frontend.sdp.get_sdp_detail", return_value=(SdpReconciliation(rows=_SDP_ROWS), spectrum)):
+        response = client.get("/api/sdp/sdp-1/")
+    assert response.status_code == 200
+    assert "AMS-NYC" in response.text
+    # cross-link to the circuit detail (FastUI stores the per-row URL template)
+    assert "/circuits/{subscription_id}/" in response.text
+
+
+_STP_DETAIL, _SDP_DETAIL = "amiss.frontend.stp.get_stp_detail", "amiss.frontend.sdp.get_sdp_detail"
+
+
+@pytest.mark.parametrize(
+    ("target", "value", "path", "expected"),
+    [
+        pytest.param(
+            _STP_DETAIL, (StpReconciliation(rows=[]), CircuitList()), "/api/stp/nope/", "nope", id="stp-not-found"
+        ),
+        pytest.param(
+            _SDP_DETAIL, (SdpReconciliation(rows=[]), SpectrumView()), "/api/sdp/nope/", "nope", id="sdp-not-found"
+        ),
+        pytest.param(
+            _STP_DETAIL,
+            (StpReconciliation(error="STP source down"), CircuitList()),
+            "/api/stp/stp-1/",
+            "source down",
+            id="stp-source-down",
+        ),
+        pytest.param(
+            _SDP_DETAIL,
+            (SdpReconciliation(error="SDP source down"), SpectrumView()),
+            "/api/sdp/sdp-1/",
+            "source down",
+            id="sdp-source-down",
+        ),
+    ],
+)
+def test_detail_page_says_why_it_has_no_row(target, value, path, expected):
+    with patch(target, return_value=value):
+        response = client.get(path)
+    assert response.status_code == 200 and expected in response.text
