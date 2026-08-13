@@ -74,9 +74,11 @@ class TestMapCircuit:
                 {
                     "subscription_id": "sub-1",
                     "description": "circuit A-Z",
-                    "source_stp": "Port A",
+                    "source_stp": "Port A",  # the name reads better in the table...
+                    "source_stp_id": "urn:ogf:network:a",  # ...but only the id joins back to /stp
                     "source_vlan": "100",
                     "dest_stp": "Port Z",
+                    "dest_stp_id": "urn:ogf:network:z",
                     "dest_vlan": "200",
                     "source": "Port A (vlan 100)",  # merged stp+vlan for the compact list
                     "dest": "Port Z (vlan 200)",

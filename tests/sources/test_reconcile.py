@@ -20,9 +20,11 @@ from amiss.sources.reconcile import (
     DdsSdp,
     DdsStp,
     ReconcileStatus,
+    StpRow,
     normalize_stp_id,
     reconcile_sdps,
     reconcile_stps,
+    sdp_capacity,
 )
 from amiss.sources.wfo import SdpMember, SdpSub, StpSub
 
@@ -69,6 +71,30 @@ class TestReconcileStps:
         # subscription not in DDS: keeps the WFO id, flagged
         assert by_status[ReconcileStatus.MISSING_IN_DDS].subscription_id == "s-c"
 
+    def test_carries_the_wfo_capacity_and_lifecycle_status(self):
+        wfo = [StpSub(subscription_id="s-a", stp_id="dom:portA", capacity=100000, status="active")]
+        row = reconcile_stps(wfo, [DdsStp(stp_id="dom:portA")]).rows[0]
+        assert row.capacity == 100000 and row.wfo_status == "active"
+
+    @pytest.mark.parametrize(
+        ("stp_id", "network", "port"),
+        [
+            pytest.param("dom.example.net:2024:topo:portA", "dom.example.net:2024:topo", "portA", id="urn-style-id"),
+            pytest.param("portA", None, "portA", id="no-topology-prefix"),
+            pytest.param(None, None, None, id="no-id"),
+        ],
+    )
+    def test_splits_the_topology_off_the_stp_id(self, stp_id, network, port):
+        row = StpRow(stp_id=stp_id, status=ReconcileStatus.DDS_ONLY)
+        assert (row.network, row.port) == (network, port)
+
+    @pytest.mark.parametrize(
+        ("subscription_id", "expected"),
+        [pytest.param("abcdef12-3456", "abcdef12", id="shortened"), pytest.param(None, None, id="dds-only-row")],
+    )
+    def test_short_id(self, subscription_id, expected):
+        assert StpRow(subscription_id=subscription_id, status=ReconcileStatus.IN_BOTH).short_id == expected
+
     @pytest.mark.parametrize(
         ("wfo", "dds"),
         [pytest.param(None, [], id="wfo-failed"), pytest.param([], None, id="dds-failed")],
@@ -94,7 +120,7 @@ class TestReconcileSdps:
         ]
         dds = [
             # reversed order + vlan suffixes: must still match the sdp-1 pair
-            DdsSdp(stp_a_id="dom:portB?vlan=100", stp_z_id="dom:portA?vlan=200", description="dds A-B"),
+            DdsSdp(stp_a_id="dom:portB?vlan=100", stp_z_id="dom:portA?vlan=200"),
             DdsSdp(stp_a_id="dom:portC", stp_z_id="dom:portD"),
         ]
         by_status = {row.status: row for row in reconcile_sdps(wfo, dds).rows}
@@ -107,6 +133,81 @@ class TestReconcileSdps:
         assert by_status[ReconcileStatus.IN_BOTH].subscription_id == "sdp-1"
         assert by_status[ReconcileStatus.MISSING_IN_DDS].subscription_id == "sdp-2"
         assert by_status[ReconcileStatus.DDS_ONLY].subscription_id is None
+
+    def test_reads_member_values_by_id_not_by_position(self):
+        """The WFO returns the members in its own order, unrelated to the A/Z order the row displays.
+
+        Reading them positionally would print the two ends' VLAN ranges swapped against the STP A /
+        STP Z columns beside them.
+        """
+        wfo = SdpSub(
+            subscription_id="sdp-1",
+            # reversed relative to the A/Z ids the DDS gives below
+            stps=[
+                SdpMember(stp_id="dom:portB", label_group="200-299"),
+                SdpMember(stp_id="dom:portA", label_group="100-199"),
+            ],
+        )
+        row = reconcile_sdps([wfo], [DdsSdp(stp_a_id="dom:portA", stp_z_id="dom:portB")]).rows[0]
+        assert (row.stp_a_id, row.stp_z_id) == ("dom:portA", "dom:portB")
+        assert row.vlan_range == "100-199 | 200-299"
+
+    @pytest.mark.parametrize(
+        ("stp_name", "expected"),
+        [
+            pytest.param("NetherLight to DFN 2", "NetherLight to DFN 2", id="name-when-the-wfo-has-one"),
+            pytest.param(None, "dom:portA", id="falls-back-to-the-id"),
+        ],
+    )
+    def test_ends_are_shown_by_name(self, stp_name, expected):
+        """The table shows each end by name; the id stays on the row for the detail page."""
+        wfo = SdpSub(
+            subscription_id="sdp-1",
+            stps=[SdpMember(stp_id="dom:portA", stp_name=stp_name), SdpMember(stp_id="dom:portB")],
+        )
+        row = reconcile_sdps([wfo], [DdsSdp(stp_a_id="dom:portA", stp_z_id="dom:portB")]).rows[0]
+        assert row.stp_a_name == expected
+        assert row.stp_a_id == "dom:portA"
+
+    @pytest.mark.parametrize(
+        ("label_a", "label_z", "expected"),
+        [
+            pytest.param("1-10", "1-10", "1-10", id="ends-agree-show-one"),
+            pytest.param("1-10", "1-20", "1-10 | 1-20", id="ends-differ-show-both"),
+            pytest.param("1-10", None, "1-10", id="only-one-end-known"),
+            pytest.param(None, None, None, id="neither-end-known"),
+        ],
+    )
+    def test_vlan_range_comes_from_the_members(self, label_a, label_z, expected):
+        wfo = SdpSub(
+            subscription_id="sdp-1",
+            stps=[
+                SdpMember(stp_id="dom:portA", label_group=label_a),
+                SdpMember(stp_id="dom:portB", label_group=label_z),
+            ],
+        )
+        row = reconcile_sdps([wfo], [DdsSdp(stp_a_id="dom:portA", stp_z_id="dom:portB")]).rows[0]
+        assert row.vlan_range == expected
+
+    @pytest.mark.parametrize(
+        ("capacity_a", "capacity_z", "expected"),
+        [
+            pytest.param(100, 100, 100, id="ends-agree"),
+            pytest.param(400, 100, 100, id="lower-end-binds"),
+            pytest.param(None, 100, 100, id="only-one-end-known"),
+            pytest.param(None, None, None, id="neither-end-known"),
+        ],
+    )
+    def test_capacity_is_the_lower_end(self, capacity_a, capacity_z, expected):
+        sdp = SdpSub(
+            subscription_id="sdp-1",
+            stps=[
+                SdpMember(stp_id="dom:portA", capacity=capacity_a),
+                SdpMember(stp_id="dom:portB", capacity=capacity_z),
+            ],
+        )
+        assert sdp_capacity(sdp) == expected
+        assert reconcile_sdps([sdp], []).rows[0].capacity == expected
 
     @pytest.mark.parametrize(
         ("wfo", "dds"),

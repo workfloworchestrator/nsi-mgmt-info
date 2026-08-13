@@ -64,7 +64,7 @@ STP_QUERY = """
 SDP_QUERY = """
 { subscriptions(first: 1000, filterBy: [{field: "tag", value: "SDP"}]) {
   page { subscriptionId status
-    ... on %(sdp)s { sdp { sdpName stps { stpId stpName labelGroup } } } }
+    ... on %(sdp)s { sdp { sdpName stps { stpId stpName capacity labelGroup } } } }
   pageInfo { totalItems }
 } }
 """ % {"sdp": SDP_TYPE}
@@ -94,17 +94,23 @@ def _is_authz_error(errors: list) -> bool:
     )
 
 
+def short_id(subscription_id: str | None) -> str | None:
+    """Return the first 8 chars of a subscription id, which is what the list tables show."""
+    return subscription_id[:8] if subscription_id else None
+
+
 class CircuitRow(BaseModel):
     """A circuit row rendered in /circuits, built live from an MDP2P subscription."""
 
     subscription_id: str
-    short_id: str | None = None  # first 8 chars of subscription_id, shown in the list; full id on detail
     description: str | None = None
     start_time: str | None = None  # 'YYYY-MM-DD HH:MM:SS' (compact, wraps on the space)
     end_time: str | None = None
-    source_stp: str | None = None
+    source_stp: str | None = None  # the STP's name where it has one; source_stp_id is what joins to /stp
+    source_stp_id: str | None = None
     source_vlan: str | None = None
     dest_stp: str | None = None
+    dest_stp_id: str | None = None
     dest_vlan: str | None = None
     source: str | None = None  # 'stp (vlan N)' for the compact list; raw stp/vlan (above) shown on detail
     dest: str | None = None
@@ -113,6 +119,11 @@ class CircuitRow(BaseModel):
     created_by: str | None = None  # 'Full Name <email>' from the WFO; the list shows created_by_name
     connection_id: str | None = None
     global_reservation_id: str | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def short_id(self) -> str | None:
+        return short_id(self.subscription_id)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -142,6 +153,7 @@ class SdpMember(BaseModel):
 
     stp_id: str | None = None
     stp_name: str | None = None
+    capacity: int | None = None
     label_group: str | None = None
 
 
@@ -163,6 +175,11 @@ def circuit_state_bucket(state: str | None) -> str:
             return "terminated"
         case _:
             return "activated"
+
+
+def is_terminated(state: str | None) -> bool:
+    """Whether a circuit is gone, as opposed to one that still exists in some form."""
+    return circuit_state_bucket(state) == "terminated"
 
 
 def query_wfo(query: str, token: str | None) -> dict | None:
@@ -224,13 +241,18 @@ def _created_by(sub: dict) -> str | None:
     return chosen.get("createdBy") if chosen else None
 
 
-def _endpoint(saps: list[dict], index: int) -> tuple[str | None, str | None]:
-    """Return (stp label, vlan) for ``saps[index]``, tolerating nulls at every level."""
+def _endpoint(saps: list[dict], index: int) -> tuple[str | None, str | None, str | None]:
+    """Return (stp label, stp id, vlan) for ``saps[index]``, tolerating nulls at every level.
+
+    The label is the STP's name where it has one, which is what reads well in a table; the id is kept
+    alongside it because it is the only value that joins back to the STP inventory — names are display
+    text and do not.
+    """
     sap = saps[index] if len(saps) > index else None
     if not sap:
-        return None, None
+        return None, None, None
     stp = sap.get("stp") or {}
-    return (stp.get("stpName") or stp.get("stpId")), sap.get("vlan")
+    return (stp.get("stpName") or stp.get("stpId")), stp.get("stpId"), sap.get("vlan")
 
 
 def _endpoint_label(stp: str | None, vlan: str | None) -> str | None:
@@ -254,18 +276,19 @@ def _map_circuit(sub: dict) -> CircuitRow:
     vc = sub.get("vc") or {}
     saps = vc.get("saps") or []
     # saps[0]=source, saps[1]=dest is the create-workflow convention (create_mdp2p.py).
-    source_stp, source_vlan = _endpoint(saps, 0)
-    dest_stp, dest_vlan = _endpoint(saps, 1)
+    source_stp, source_stp_id, source_vlan = _endpoint(saps, 0)
+    dest_stp, dest_stp_id, dest_vlan = _endpoint(saps, 1)
     subscription_id = sub["subscriptionId"]
     return CircuitRow(
         subscription_id=subscription_id,
-        short_id=subscription_id[:8],
         description=vc.get("circuitDescription") or sub.get("description"),
         start_time=_format_ts(sub.get("startDate")),
         end_time=_format_ts(sub.get("endDate")),
         source_stp=source_stp,
+        source_stp_id=source_stp_id,
         source_vlan=source_vlan,
         dest_stp=dest_stp,
+        dest_stp_id=dest_stp_id,
         dest_vlan=dest_vlan,
         source=_endpoint_label(source_stp, source_vlan),
         dest=_endpoint_label(dest_stp, dest_vlan),
@@ -292,7 +315,12 @@ def _map_stp(sub: dict) -> StpSub:
 def _map_sdp(sub: dict) -> SdpSub:
     sdp = sub.get("sdp") or {}
     members = [
-        SdpMember(stp_id=s.get("stpId"), stp_name=s.get("stpName"), label_group=s.get("labelGroup"))
+        SdpMember(
+            stp_id=s.get("stpId"),
+            stp_name=s.get("stpName"),
+            capacity=s.get("capacity"),
+            label_group=s.get("labelGroup"),
+        )
         for s in (sdp.get("stps") or [])
     ]
     return SdpSub(

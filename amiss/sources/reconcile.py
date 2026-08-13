@@ -23,9 +23,9 @@ to fetch (``None``, distinct from an empty list), the reconciliation returns an 
 from collections.abc import Callable, Iterable
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
-from amiss.sources.wfo import SdpSub, StpSub
+from amiss.sources.wfo import SdpMember, SdpSub, StpSub, short_id
 
 
 class ReconcileStatus(str, Enum):
@@ -45,33 +45,61 @@ class DdsStp(BaseModel):
 
 
 class DdsSdp(BaseModel):
-    """The DDS side of an SDP: the two member STP ids plus display fields."""
+    """The DDS side of an SDP: the proxy reports nothing but the two member STP ids."""
 
     stp_a_id: str
     stp_z_id: str
-    vlan_range: str | None = None
-    description: str | None = None
 
 
 class StpRow(BaseModel):
     """A reconciled STP row for /stp."""
 
+    subscription_id: str | None = None  # absent on a DDS_ONLY row: there is no subscription yet
     stp_id: str | None = None
-    vlan_range: str | None = None
     description: str | None = None
-    subscription_id: str | None = None
+    vlan_range: str | None = None
+    capacity: int | None = None
+    wfo_status: str | None = None  # the subscription's own lifecycle, distinct from `status` below
     status: ReconcileStatus
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def short_id(self) -> str | None:
+        return short_id(self.subscription_id)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def network(self) -> str | None:
+        """The topology part of the STP id, split off because it repeats identically down the table."""
+        # ponytail: split on the last colon; parse the URN properly if a local id ever contains one
+        return (self.stp_id.rpartition(":")[0] or None) if self.stp_id else None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def port(self) -> str | None:
+        """The STP id without its topology prefix."""
+        return self.stp_id.rpartition(":")[2] if self.stp_id else None
 
 
 class SdpRow(BaseModel):
     """A reconciled SDP row for /sdp."""
 
+    subscription_id: str | None = None
     stp_a_id: str | None = None
     stp_z_id: str | None = None
-    vlan_range: str | None = None
+    # what the table shows for each end: the port's name, falling back to its id where the WFO has none
+    stp_a_name: str | None = None
+    stp_z_name: str | None = None
     description: str | None = None
-    subscription_id: str | None = None
+    vlan_range: str | None = None
+    capacity: int | None = None
+    wfo_status: str | None = None
     status: ReconcileStatus
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def short_id(self) -> str | None:
+        return short_id(self.subscription_id)
 
 
 class StpReconciliation(BaseModel):
@@ -115,10 +143,12 @@ def _stp_row(nid: str, wfo_by_id: dict[str, StpSub], dds_by_id: dict[str, DdsStp
     wfo = wfo_by_id.get(nid)
     dds = dds_by_id.get(nid)
     return StpRow(
-        stp_id=(dds.stp_id if dds else wfo.stp_id if wfo else nid),
-        vlan_range=(dds.vlan_range if dds else None) or (wfo.label_group if wfo else None),
-        description=(dds.description if dds else None) or (wfo.stp_name if wfo else None),
         subscription_id=wfo.subscription_id if wfo else None,
+        stp_id=(dds.stp_id if dds else wfo.stp_id if wfo else nid),
+        description=(dds.description if dds else None) or (wfo.stp_name if wfo else None),
+        vlan_range=(dds.vlan_range if dds else None) or (wfo.label_group if wfo else None),
+        capacity=wfo.capacity if wfo else None,
+        wfo_status=wfo.status if wfo else None,
         status=_status(wfo is not None, dds is not None),
     )
 
@@ -139,18 +169,55 @@ def sdp_pair(raw_ids: Iterable[str | None]) -> frozenset[str] | None:
     return frozenset(ids) if len(ids) == 2 else None
 
 
+def sdp_capacity(sdp: SdpSub) -> int | None:
+    """Return the SDP's own capacity: the lower of its two ends, which is what the link can carry."""
+    capacities = [member.capacity for member in sdp.stps if member.capacity is not None]
+    return min(capacities) if capacities else None
+
+
+def sdp_ends(wfo: SdpSub | None, stp_a: str, stp_z: str) -> tuple[SdpMember | None, SdpMember | None]:
+    """Return the SDP's two members in the given A/Z order.
+
+    ``wfo.stps`` is in the order the orchestrator happens to return, which is unrelated to the A/Z
+    order a row displays, so the members are looked up by id — never by list position, or a row can
+    show its two ends' values swapped against the columns beside them.
+    """
+    by_id = _by_normalized_id(wfo.stps if wfo else [], lambda member: member.stp_id)
+    return by_id.get(normalize_stp_id(stp_a) or ""), by_id.get(normalize_stp_id(stp_z) or "")
+
+
+def end_label(end: SdpMember | None, stp_id: str) -> str:
+    """Label one end of an SDP: its port name, falling back to the id where the WFO has no name."""
+    return (end.stp_name if end else None) or stp_id
+
+
+def _shared(a: str | None, z: str | None) -> str | None:
+    """Render a value the SDP's two ends should share: one value when they agree, both when they do not.
+
+    The ends of one inter-domain link ought to match; a disagreement is itself a defect this page
+    exists to surface, so it is shown rather than reduced away.
+    """
+    return " | ".join(dict.fromkeys(value for value in (a, z) if value)) or None
+
+
 def _sdp_row(
     pair: frozenset[str], wfo_by_pair: dict[frozenset[str], SdpSub], dds_by_pair: dict[frozenset[str], DdsSdp]
 ) -> SdpRow:
     wfo = wfo_by_pair.get(pair)
     dds = dds_by_pair.get(pair)
     stp_a, stp_z = (dds.stp_a_id, dds.stp_z_id) if dds else tuple(sorted(pair))
+    end_a, end_z = sdp_ends(wfo, stp_a, stp_z)
     return SdpRow(
+        subscription_id=wfo.subscription_id if wfo else None,
         stp_a_id=stp_a,
         stp_z_id=stp_z,
-        vlan_range=(dds.vlan_range if dds else None),
-        description=(dds.description if dds else None) or (wfo.sdp_name if wfo else None),
-        subscription_id=wfo.subscription_id if wfo else None,
+        stp_a_name=end_label(end_a, stp_a),
+        stp_z_name=end_label(end_z, stp_z),
+        description=wfo.sdp_name if wfo else None,
+        vlan_range=_shared(end_a.label_group if end_a else None, end_z.label_group if end_z else None),
+        # Unlike the VLAN range, capacity stays a number so the column sorts and /spectrum can divide by it.
+        capacity=sdp_capacity(wfo) if wfo else None,
+        wfo_status=wfo.status if wfo else None,
         status=_status(wfo is not None, dds is not None),
     )
 
