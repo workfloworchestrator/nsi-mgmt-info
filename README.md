@@ -23,6 +23,33 @@ ANA Engineering and ANA Planning Groups.
     <img width="50%" src="/artwork/ana-logo-scaled-ab2.png">
 </p>
 
+## Architecture
+
+The diagram below shows the ANA-GRAM automation stack and how AMISS fits into the broader architecture.
+
+<p align="center">
+    <img src="/artwork/ana-automation-stack.drawio.svg">
+</p>
+
+**Color legend:**
+
+| Color | Meaning |
+|-------|---------|
+| Purple | Existing software deployed in every participating network |
+| Green | Existing NSI infrastructure software |
+| Orange | Software developed as part of ANA-GRAM |
+
+**Components:**
+
+- [**AMISS**](https://github.com/workfloworchestrator/nsi-mgmt-info) (this repository) — The NSI Management Information Service, a read-only management portal giving an overview of the services configured on the ANA infrastructure and their operational status. It queries the NSI Orchestrator as its source of truth, the DDS Proxy to reconcile the known topology against it, and the NSI Aggregator Proxy for multi-domain circuit paths.
+- [**NSI Orchestrator**](https://github.com/workfloworchestrator/nsi-orchestrator) — Central orchestration layer that manages the lifecycle of topologies, switching services, STPs, SDPs, and multi-domain connections. It uses the DDS Proxy for topology visibility and the NSI Aggregator Proxy as its Network Resource Manager.
+- [**DDS Proxy**](https://github.com/workfloworchestrator/nsi-dds-proxy) — Fetches NML topology documents from the upstream DDS, parses them, and exposes the data as a JSON REST API.
+- [**NSI Aggregator Proxy**](https://github.com/workfloworchestrator/nsi-aggregator-proxy) — Translates simple REST/JSON calls into NSI Connection Service v2 SOAP messages toward the NSI Aggregator, abstracting NSI protocol complexity behind a linear state machine.
+- [**DDS**](https://github.com/BandwidthOnDemand/nsi-dds) — The NSI Document Distribution Service, a distributed registry where networks publish and discover NML topology documents and NSA descriptions.
+- [**PCE**](https://github.com/BandwidthOnDemand/nsi-pce) — The NSI Path Computation Element, which computes end-to-end paths across multiple network domains using topology information from the DDS.
+- [**NSI Aggregator (Safnari)**](https://github.com/BandwidthOnDemand/nsi-safnari) — An NSI Connection Service v2.1 Aggregator that coordinates connection requests across multiple provider domains, using the PCE for path computation.
+- [**SuPA**](https://github.com/workfloworchestrator/SuPA) — The SURF ultimate Provider Agent, an NSI Provider Agent that manages circuit reservation, creation, and removal within a single network domain. Uses gRPC instead of SOAP, and is always deployed together with [**PolyNSI**](https://github.com/workfloworchestrator/PolyNSI), a bidirectional SOAP-to-gRPC translation proxy.
+
 ## What AMISS shows
 
 AMISS is **read-only**: it surfaces and visualizes information sourced live from the ANA-NSI stack and does not create or modify anything (there is no NSI control plane behind it). The **WFO orchestrator** is the source of truth; the **DDS proxy** is used to reconcile the known topology against it. Every page fetches on demand — there is no database or cache.
