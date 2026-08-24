@@ -72,6 +72,15 @@ are left absolute.
 
 The test setup in `conftest.py` creates dummy PEM files (`amiss-certificate.pem`, `amiss-private-key.pem`) **before any amiss imports**, because `Settings` validates its `FilePath` fields at import time. Upstreams are mocked per test (`unittest.mock.patch` for units; the `responses` library for the integration stack in `tests/integration/`).
 
+## Versioning
+
+The version is the git tag; never edit it. `pyproject.toml` is `dynamic = ["version"]` with
+setuptools-scm, so a tag builds `0.1.1` and any other commit builds `0.1.2.dev<n>+g<sha>`. The
+container build has no `.git`, so `container.yml` resolves the version on the runner and passes
+`--build-arg VERSION`, which the `Dockerfile` exports as
+`SETUPTOOLS_SCM_PRETEND_VERSION_FOR_NSI_MGMT_INFO`. Omitting it fails the build by design. `uv.lock`
+records the project as `(dynamic)` and so does not churn per commit.
+
 ## Code style
 
 - Line length: 120
