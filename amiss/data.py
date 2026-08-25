@@ -18,20 +18,37 @@ Queries the WFO (forwarding the caller's OIDC token) and the DDS/aggregator prox
 there is no cache. Accessors that need more than one upstream fetch them concurrently.
 """
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 import structlog
 from pydantic import BaseModel
 
 from amiss.sources.aggregator import PathSegment, SpectrumView, build_spectrum, fetch_agg_circuits
-from amiss.sources.dds_topology import fetch_dds_sdps, fetch_dds_stps
-from amiss.sources.reconcile import SdpReconciliation, StpReconciliation, reconcile_sdps, reconcile_stps
+from amiss.sources.dds_topology import (
+    fetch_dds_sdps,
+    fetch_dds_stps,
+    fetch_dds_switching_services,
+    fetch_dds_topologies,
+)
+from amiss.sources.reconcile import (
+    DdsNamed,
+    NamedReconciliation,
+    SdpReconciliation,
+    StpReconciliation,
+    reconcile_named,
+    reconcile_sdps,
+    reconcile_stps,
+)
 from amiss.sources.wfo import (
     CircuitRow,
+    NamedSub,
     WfoUnauthorizedError,
     fetch_circuits,
     fetch_sdp_subscriptions,
     fetch_stp_subscriptions,
+    fetch_switching_service_subscriptions,
+    fetch_topology_subscriptions,
 )
 
 logger = structlog.get_logger(__name__)
@@ -66,6 +83,35 @@ def get_circuits(token: str | None) -> CircuitList:
     except Exception as e:
         logger.warning("fetching circuits failed", error=str(e))
     return CircuitList(error="Circuits unavailable: the WFO could not be reached.")
+
+
+def _get_named(
+    token: str | None,
+    fetch_wfo: Callable[[str | None], list[NamedSub] | None],
+    fetch_dds: Callable[[], list[DdsNamed] | None],
+    what: str,
+) -> NamedReconciliation:
+    """Reconcile a Topology or SwitchingService, fetching both legs at once."""
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            wfo = pool.submit(fetch_wfo, token)
+            dds = pool.submit(fetch_dds)
+        return reconcile_named(wfo.result(), dds.result(), what)
+    except WfoUnauthorizedError:
+        return NamedReconciliation(error=NOT_AUTHORIZED)
+    except Exception as e:
+        logger.warning("reconciliation failed", what=what, error=str(e))
+        return NamedReconciliation(error=f"{what} data unavailable")
+
+
+def get_topologies(token: str | None) -> NamedReconciliation:
+    """Return the Topology rows reconciled between the WFO subscriptions and the DDS."""
+    return _get_named(token, fetch_topology_subscriptions, fetch_dds_topologies, "Topology")
+
+
+def get_switching_services(token: str | None) -> NamedReconciliation:
+    """Return the SwitchingService rows reconciled between the WFO subscriptions and the DDS."""
+    return _get_named(token, fetch_switching_service_subscriptions, fetch_dds_switching_services, "Switching service")
 
 
 def get_stps(token: str | None) -> StpReconciliation:

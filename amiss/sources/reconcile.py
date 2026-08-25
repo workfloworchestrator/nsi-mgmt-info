@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Reconcile the WFO STP/SDP subscriptions against the DDS topology.
+"""Reconcile the WFO Topology/SwitchingService/STP/SDP subscriptions against the DDS topology.
 
 Each row is tagged so the UI can show which subscriptions are backed by the DDS, which topology has
 no subscription yet, and which subscriptions the DDS no longer knows about. If either source failed
@@ -25,7 +25,7 @@ from enum import Enum
 
 from pydantic import BaseModel, computed_field
 
-from amiss.sources.wfo import SdpMember, SdpSub, StpSub, short_id
+from amiss.sources.wfo import NamedSub, SdpMember, SdpSub, StpSub, short_id
 
 
 class ReconcileStatus(str, Enum):
@@ -102,6 +102,33 @@ class SdpRow(BaseModel):
         return short_id(self.subscription_id)
 
 
+class DdsNamed(BaseModel):
+    """The DDS side of a flat id-plus-name object: a Topology or a SwitchingService."""
+
+    object_id: str
+    name: str | None = None
+
+
+class NamedRow(BaseModel):
+    """A reconciled Topology or SwitchingService row."""
+
+    subscription_id: str | None = None  # absent on a DDS_ONLY row: not subscribed yet
+    object_id: str | None = None
+    description: str | None = None
+    wfo_status: str | None = None
+    status: ReconcileStatus
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def short_id(self) -> str | None:
+        return short_id(self.subscription_id)
+
+
+class NamedReconciliation(BaseModel):
+    rows: list[NamedRow] = []
+    error: str | None = None
+
+
 class StpReconciliation(BaseModel):
     rows: list[StpRow] = []
     error: str | None = None
@@ -112,8 +139,8 @@ class SdpReconciliation(BaseModel):
     error: str | None = None
 
 
-def normalize_stp_id(raw: str | None) -> str | None:
-    """Normalise an STP id for matching: drop the URN prefix and any ``?…`` query suffix.
+def normalize_id(raw: str | None) -> str | None:
+    """Normalise an NSI URN for matching: drop the URN prefix and any ``?…`` query suffix.
 
     Case is preserved: the DDS and WFO both derive ids from the same NSI topology, so casing already
     matches, and lowercasing could merge genuinely distinct ports.
@@ -126,7 +153,7 @@ def normalize_stp_id(raw: str | None) -> str | None:
 
 def _by_normalized_id[T](items: Iterable[T], id_of: Callable[[T], str | None]) -> dict[str, T]:
     """Index items by their normalised STP id, dropping those without one (last wins on collision)."""
-    return {nid: item for item in items if (nid := normalize_stp_id(id_of(item)))}
+    return {nid: item for item in items if (nid := normalize_id(id_of(item)))}
 
 
 def _status(in_wfo: bool, in_dds: bool) -> ReconcileStatus:
@@ -163,9 +190,32 @@ def reconcile_stps(wfo: list[StpSub] | None, dds: list[DdsStp] | None) -> StpRec
     return StpReconciliation(rows=[_stp_row(nid, wfo_by_id, dds_by_id) for nid in ids])
 
 
+def _named_row(nid: str, wfo_by_id: dict[str, NamedSub], dds_by_id: dict[str, DdsNamed]) -> NamedRow:
+    wfo = wfo_by_id.get(nid)
+    dds = dds_by_id.get(nid)
+    return NamedRow(
+        subscription_id=wfo.subscription_id if wfo else None,
+        object_id=(dds.object_id if dds else wfo.object_id if wfo else nid),
+        # The WFO name wins: renaming via modify is deliberate, not drift.
+        description=(wfo.name if wfo else None) or (dds.name if dds else None),
+        wfo_status=wfo.status if wfo else None,
+        status=_status(wfo is not None, dds is not None),
+    )
+
+
+def reconcile_named(wfo: list[NamedSub] | None, dds: list[DdsNamed] | None, what: str) -> NamedReconciliation:
+    """Reconcile WFO Topology/SwitchingService subscriptions against the DDS, matched on normalised id."""
+    if wfo is None or dds is None:
+        return NamedReconciliation(error=f"{what} reconciliation unavailable: a source could not be reached")
+    wfo_by_id = _by_normalized_id(wfo, lambda s: s.object_id)
+    dds_by_id = _by_normalized_id(dds, lambda d: d.object_id)
+    ids = sorted(set(wfo_by_id) | set(dds_by_id))
+    return NamedReconciliation(rows=[_named_row(nid, wfo_by_id, dds_by_id) for nid in ids])
+
+
 def sdp_pair(raw_ids: Iterable[str | None]) -> frozenset[str] | None:
     """Build the unordered match key of an SDP: its two distinct normalised STP ids, or ``None``."""
-    ids = {nid for raw in raw_ids if (nid := normalize_stp_id(raw))}
+    ids = {nid for raw in raw_ids if (nid := normalize_id(raw))}
     return frozenset(ids) if len(ids) == 2 else None
 
 
@@ -183,7 +233,7 @@ def sdp_ends(wfo: SdpSub | None, stp_a: str, stp_z: str) -> tuple[SdpMember | No
     show its two ends' values swapped against the columns beside them.
     """
     by_id = _by_normalized_id(wfo.stps if wfo else [], lambda member: member.stp_id)
-    return by_id.get(normalize_stp_id(stp_a) or ""), by_id.get(normalize_stp_id(stp_z) or "")
+    return by_id.get(normalize_id(stp_a) or ""), by_id.get(normalize_id(stp_z) or "")
 
 
 def end_label(end: SdpMember | None, stp_id: str) -> str:

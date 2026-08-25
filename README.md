@@ -79,9 +79,12 @@ Directions to improve, largest first:
 - **Orchestrator-side (biggest win):** cache token introspection / validation at the WFO so each
   GraphQL request no longer pays the full auth cost. This speeds up **every** page across the stack and
   is the only way under the one-round-trip floor. Out of scope for this repo.
-- **Batch the dashboard's WFO queries:** issue the circuits/STP/SDP subscription queries as a single
-  aliased GraphQL request instead of three, trading three WFO round-trips for one (also helps
-  `/spectrum`, which makes two). Cannot beat the single-round-trip floor.
+- **Batch the dashboard's WFO queries:** issue the circuits / topology / switching-service / STP / SDP
+  subscription queries and the validation-failure `processes` query as a single aliased GraphQL request
+  instead of six, trading six WFO round-trips for one (also helps `/spectrum`, which makes two). The
+  dashboard already runs them concurrently, so this does not change its wall-clock on an idle
+  orchestrator — the win is the orchestrator-side cost, six token validations per load rather than one,
+  which is what bites under concurrency. Cannot beat the single-round-trip floor.
 - A response cache would hide the latency but adds staleness; the orchestrator is the source of truth,
   so the token-validation fix above is preferred.
 

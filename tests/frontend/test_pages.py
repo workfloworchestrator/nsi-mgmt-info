@@ -26,8 +26,17 @@ from amiss.data import NOT_AUTHORIZED, CircuitList
 from amiss.frontend.circuits import _in_tab
 from amiss.frontend.home import Tone, _stat_line
 from amiss.sources.aggregator import UNATTRIBUTED_ID, CircuitOnSdp, PathSegment, SpectrumRow, SpectrumView
-from amiss.sources.reconcile import DdsStp, ReconcileStatus, SdpReconciliation, SdpRow, StpReconciliation, StpRow
-from amiss.sources.wfo import CircuitRow, StpSub, WfoUnauthorizedError
+from amiss.sources.reconcile import (
+    DdsStp,
+    NamedReconciliation,
+    NamedRow,
+    ReconcileStatus,
+    SdpReconciliation,
+    SdpRow,
+    StpReconciliation,
+    StpRow,
+)
+from amiss.sources.wfo import CircuitRow, StpSub, ValidationFailureRow, WfoUnauthorizedError
 
 client = TestClient(app)
 
@@ -66,14 +75,24 @@ def test_in_tab(state, tab, expected):
 
 # The dashboard fetches each upstream directly (composing the cards itself), so tests stub the fetch
 # functions on the home module. Default each to an empty list; override per test.
-_DASHBOARD_FETCHES = (
+# Only the WFO legs forward the caller's token and so can raise WfoUnauthorizedError; the 401 test
+# below is parametrized over exactly these, derived rather than mirrored so the two cannot drift.
+_WFO_FETCHES = (
     "fetch_circuits",
+    "fetch_topology_subscriptions",
+    "fetch_switching_service_subscriptions",
     "fetch_stp_subscriptions",
     "fetch_sdp_subscriptions",
+    "fetch_validation_failures",
+)
+_LOCAL_FETCHES = (
+    "fetch_dds_topologies",
+    "fetch_dds_switching_services",
     "fetch_dds_stps",
     "fetch_dds_sdps",
     "fetch_agg_circuits",
 )
+_DASHBOARD_FETCHES = _WFO_FETCHES + _LOCAL_FETCHES
 
 
 def _dashboard_patches(**overrides):
@@ -531,3 +550,103 @@ def test_detail_page_says_why_it_has_no_row(target, value, path, expected):
     with patch(target, return_value=value):
         response = client.get(path)
     assert response.status_code == 200 and expected in response.text
+
+
+def _texts(tree) -> list[str]:
+    """Every rendered text string in a FastUI tree."""
+    return [text for node in _walk(tree) if isinstance(text := node.get("text"), str)]
+
+
+_FAILURE = ValidationFailureRow(
+    process_id="p-1",
+    workflow_name="validate_stp",
+    last_status="inconsistent_data",
+    started_at="2026-08-24 01:10:00",
+    failed_reason="capacity drifted",
+    subscription_id="0123456789ab",
+    description="some STP",
+)
+
+
+def test_dashboard_shows_no_validation_failures_when_clean():
+    with ExitStack() as stack:
+        for p in _dashboard_patches(fetch_validation_failures=[]):
+            stack.enter_context(p)
+        page = client.get("/api/").json()
+    assert "Validation failures: 0" in _texts(page)
+
+
+def test_dashboard_lists_validation_failures():
+    with ExitStack() as stack:
+        for p in _dashboard_patches(fetch_validation_failures=[_FAILURE]):
+            stack.enter_context(p)
+        page = client.get("/api/").json()
+    table = next((n for n in _walk(page) if n.get("type") == "Table"), None)
+    assert table is not None, "expected a validation failure table"
+    assert table["data"][0]["workflow_name"] == "validate_stp"
+    assert table["data"][0]["short_id"] == "01234567"
+
+
+def test_dashboard_warns_when_validation_status_unavailable():
+    # a failed fetch is None, distinct from an empty list: say so rather than claim everything is fine
+    with ExitStack() as stack:
+        for p in _dashboard_patches(fetch_validation_failures=None):
+            stack.enter_context(p)
+        page = client.get("/api/").json()
+    assert "Validation status unavailable." in _texts(page)
+
+
+@pytest.mark.parametrize("refused", _WFO_FETCHES)
+def test_dashboard_reports_not_authorized_whichever_wfo_fetch_is_refused(refused):
+    """Every WFO future must be resolved inside home()'s guard; one resolved after it 500s on a 401."""
+    with ExitStack() as stack:
+        for name, p in zip(_DASHBOARD_FETCHES, _dashboard_patches()):
+            mock = stack.enter_context(p)
+            if name == refused:
+                mock.side_effect = WfoUnauthorizedError
+        response = client.get("/api/")
+    assert response.status_code == 200
+    assert NOT_AUTHORIZED in _texts(response.json())
+
+
+@pytest.mark.parametrize(
+    ("path", "accessor", "title"),
+    [
+        pytest.param("/api/topology", "get_topologies", "Topologies", id="topology"),
+        pytest.param("/api/switching-service", "get_switching_services", "Switching Services", id="switching-service"),
+    ],
+)
+class TestInventoryPages:
+    """Topology and SwitchingService share one page definition, so both are driven through one suite."""
+
+    def test_renders_rows(self, path, accessor, title):
+        rows = [
+            NamedRow(
+                subscription_id="abcdef1234", object_id="dom:topo", description="A", status=ReconcileStatus.IN_BOTH
+            ),
+            NamedRow(object_id="peer:topo", description="Peer", status=ReconcileStatus.DDS_ONLY),
+        ]
+        with patch(f"amiss.data.{accessor}", return_value=NamedReconciliation(rows=rows)):
+            page = client.get(path).json()
+        table = next(n for n in _walk(page) if n.get("type") == "Table")
+        assert [r["object_id"] for r in table["data"]] == ["dom:topo", "peer:topo"]
+        assert title in _texts(page)
+
+    def test_dds_only_tab_filters(self, path, accessor, title):
+        rows = [
+            NamedRow(subscription_id="s", object_id="dom:topo", status=ReconcileStatus.IN_BOTH),
+            NamedRow(object_id="peer:topo", status=ReconcileStatus.DDS_ONLY),
+        ]
+        with patch(f"amiss.data.{accessor}", return_value=NamedReconciliation(rows=rows)):
+            page = client.get(f"{path}/dds-only").json()
+        table = next(n for n in _walk(page) if n.get("type") == "Table")
+        assert [r["object_id"] for r in table["data"]] == ["peer:topo"]
+        assert title in _texts(page)
+
+    def test_shows_the_error_instead_of_an_empty_table(self, path, accessor, title):
+        error = NamedReconciliation(error="Topology reconciliation unavailable: a source could not be reached")
+        with patch(f"amiss.data.{accessor}", return_value=error):
+            page = client.get(path).json()
+        assert error.error in _texts(page)
+        assert title in _texts(page)
+        assert not any(n.get("type") == "Table" for n in _walk(page))

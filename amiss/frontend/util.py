@@ -23,8 +23,8 @@ from starlette.requests import Request
 
 from amiss.settings import settings
 from amiss.sources.aggregator import CircuitOnSdp, PathSegment, SpectrumRow
-from amiss.sources.reconcile import ReconcileStatus, SdpRow, StpRow
-from amiss.sources.wfo import CircuitRow
+from amiss.sources.reconcile import NamedRow, ReconcileStatus, SdpRow, StpRow
+from amiss.sources.wfo import CircuitRow, ValidationFailureRow
 
 # do not know why, but otherwise FastUI will complain
 c.Link.model_rebuild()
@@ -41,6 +41,16 @@ def root_url(path: str) -> str:
     return f"{settings.ROOT_PATH}{path}"
 
 
+_NAV_LINKS = (
+    ("Circuits", "/circuits"),
+    ("Topology", "/topology"),
+    ("Switch", "/switching-service"),
+    ("STP", "/stp"),
+    ("SDP", "/sdp"),
+    ("Spectrum", "/spectrum"),
+)
+
+
 def app_page(*components: AnyComponent, title: str | None = None) -> list[AnyComponent]:
     return [
         c.PageTitle(text=f"AMISS — {title}" if title else "AMISS"),
@@ -49,25 +59,11 @@ def app_page(*components: AnyComponent, title: str | None = None) -> list[AnyCom
             title_event=GoToEvent(url=root_url("/")),
             start_links=[
                 c.Link(
-                    components=[c.Text(text="Circuits")],
-                    on_click=GoToEvent(url=root_url("/circuits")),
-                    active=f"startswith:{root_url('/circuits')}",
-                ),
-                c.Link(
-                    components=[c.Text(text="STP")],
-                    on_click=GoToEvent(url=root_url("/stp")),
-                    active=f"startswith:{root_url('/stp')}",
-                ),
-                c.Link(
-                    components=[c.Text(text="SDP")],
-                    on_click=GoToEvent(url=root_url("/sdp")),
-                    active=f"startswith:{root_url('/sdp')}",
-                ),
-                c.Link(
-                    components=[c.Text(text="Spectrum")],
-                    on_click=GoToEvent(url=root_url("/spectrum")),
-                    active=f"startswith:{root_url('/spectrum')}",
-                ),
+                    components=[c.Text(text=label)],
+                    on_click=GoToEvent(url=root_url(path)),
+                    active=f"startswith:{root_url(path)}",
+                )
+                for label, path in _NAV_LINKS
             ],
         ),
         c.Page(
@@ -187,7 +183,7 @@ def reconcile_tabs(base: str) -> Tabs:
     return tuple((key, label, f"{base}{suffix}") for key, label, suffix, _status in _RECONCILE_TABS)
 
 
-def in_tab(row: StpRow | SdpRow, tab: str) -> bool:
+def in_tab(row: StpRow | SdpRow | NamedRow, tab: str) -> bool:
     """Whether a reconciled row belongs in the given status tab (the 'all' tab holds everything)."""
     status = _TAB_STATUS[tab]
     return status is None or row.status is status
@@ -234,6 +230,21 @@ def circuit_table(circuits: list[CircuitRow]) -> c.Table:
     )
 
 
+def named_table(rows: list[NamedRow], id_title: str) -> c.Table:
+    return c.Table(
+        data_model=NamedRow,
+        data=rows,
+        columns=[
+            DisplayLookup(field="short_id", title="ID"),
+            DisplayLookup(field="object_id", title=id_title),
+            DisplayLookup(field="description", title="Name"),
+            DisplayLookup(field="wfo_status", title="Lifecycle"),
+            DisplayLookup(field="status"),
+        ],
+        class_name="+ small",
+    )
+
+
 def stp_table(stps: list[StpRow]) -> c.Table:
     return c.Table(
         data_model=StpRow,
@@ -263,6 +274,23 @@ def sdp_table(sdps: list[SdpRow]) -> c.Table:
             DisplayLookup(field="vlan_range", title="VLANs"),
             DisplayLookup(field="capacity", title="Capacity"),
             DisplayLookup(field="status"),
+        ],
+        class_name="+ small",
+    )
+
+
+def validation_failure_table(rows: list[ValidationFailureRow]) -> c.Table:
+    return c.Table(
+        data_model=ValidationFailureRow,
+        data=rows,
+        columns=[
+            DisplayLookup(field="short_id", title="ID"),
+            DisplayLookup(field="workflow_name", title="Check"),
+            DisplayLookup(field="description", title="Subscription"),
+            DisplayLookup(field="last_status", title="Status"),
+            DisplayLookup(field="started_at", title="Last seen"),
+            DisplayLookup(field="occurrences", title="Times"),
+            DisplayLookup(field="reason", title="Reason"),
         ],
         class_name="+ small",
     )

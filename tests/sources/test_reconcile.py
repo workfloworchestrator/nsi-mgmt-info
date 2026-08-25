@@ -17,16 +17,18 @@
 import pytest
 
 from amiss.sources.reconcile import (
+    DdsNamed,
     DdsSdp,
     DdsStp,
     ReconcileStatus,
     StpRow,
-    normalize_stp_id,
+    normalize_id,
+    reconcile_named,
     reconcile_sdps,
     reconcile_stps,
     sdp_capacity,
 )
-from amiss.sources.wfo import SdpMember, SdpSub, StpSub
+from amiss.sources.wfo import NamedSub, SdpMember, SdpSub, StpSub
 
 
 @pytest.mark.parametrize(
@@ -41,8 +43,8 @@ from amiss.sources.wfo import SdpMember, SdpSub, StpSub
         pytest.param("", None, id="empty"),
     ],
 )
-def test_normalize_stp_id(raw, expected):
-    assert normalize_stp_id(raw) == expected
+def test_normalize_id(raw, expected):
+    assert normalize_id(raw) == expected
 
 
 class TestReconcileStps:
@@ -216,3 +218,63 @@ class TestReconcileSdps:
     def test_source_failure_yields_error_no_rows(self, wfo, dds):
         result = reconcile_sdps(wfo, dds)
         assert result.error is not None and result.rows == []
+
+
+class TestReconcileNamed:
+    @pytest.mark.parametrize(
+        ("wfo", "dds", "expected"),
+        [
+            pytest.param(
+                [NamedSub(subscription_id="s", object_id="urn:ogf:network:a", name="A")],
+                [DdsNamed(object_id="a", name="A")],
+                ReconcileStatus.IN_BOTH,
+                id="in-both-matched-across-urn-prefix",
+            ),
+            pytest.param(
+                [],
+                [DdsNamed(object_id="a", name="A")],
+                ReconcileStatus.DDS_ONLY,
+                id="dds-only-is-the-normal-federated-state",
+            ),
+            pytest.param(
+                [NamedSub(subscription_id="s", object_id="urn:ogf:network:a", name="A")],
+                [],
+                ReconcileStatus.MISSING_IN_DDS,
+                id="subscription-the-dds-dropped",
+            ),
+        ],
+    )
+    def test_status(self, wfo, dds, expected):
+        rows = reconcile_named(wfo, dds, "Topology").rows
+        assert [row.status for row in rows] == [expected]
+
+    @pytest.mark.parametrize(
+        ("wfo", "dds"),
+        [
+            pytest.param(None, [], id="wfo-unreachable"),
+            pytest.param([], None, id="dds-unreachable"),
+        ],
+    )
+    def test_a_failed_source_yields_an_error_and_no_rows(self, wfo, dds):
+        # a diff computed against a failed fetch would flag the whole estate
+        result = reconcile_named(wfo, dds, "Topology")
+        assert result.rows == []
+        assert result.error is not None and "Topology" in result.error
+
+    def test_wfo_name_wins_because_it_is_operator_editable(self):
+        # the modify workflow renames the subscription on purpose; that is not drift
+        result = reconcile_named(
+            [NamedSub(subscription_id="s", object_id="a", name="local label")],
+            [DdsNamed(object_id="a", name="DDS name")],
+            "Topology",
+        )
+        assert result.rows[0].description == "local label"
+
+    def test_falls_back_to_the_dds_name_when_unsubscribed(self):
+        result = reconcile_named([], [DdsNamed(object_id="a", name="DDS name")], "Topology")
+        assert result.rows[0].description == "DDS name"
+        assert result.rows[0].subscription_id is None and result.rows[0].short_id is None
+
+    def test_rows_are_sorted_by_id(self):
+        dds = [DdsNamed(object_id=oid) for oid in ("c", "a", "b")]
+        assert [row.object_id for row in reconcile_named([], dds, "Topology").rows] == ["a", "b", "c"]

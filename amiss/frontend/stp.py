@@ -37,7 +37,7 @@ from amiss.frontend.util import (
     tab_path,
     token_from_request,
 )
-from amiss.sources.reconcile import StpRow, normalize_stp_id
+from amiss.sources.reconcile import StpRow, normalize_id
 from amiss.sources.wfo import CircuitRow, is_terminated
 
 router = APIRouter()
@@ -102,14 +102,14 @@ def _circuits_on_stp(circuits: list[CircuitRow], stp_id: str | None) -> list[Cir
     and would match nothing here. Terminated circuits are left out — the question this list answers is
     what the port is carrying now, and history only obscures it.
     """
-    target = normalize_stp_id(stp_id)
+    target = normalize_id(stp_id)
     if target is None:
         return []
     return [
         circuit
         for circuit in circuits
         if not is_terminated(circuit.state)
-        and target in {normalize_stp_id(circuit.source_stp_id), normalize_stp_id(circuit.dest_stp_id)}
+        and target in {normalize_id(circuit.source_stp_id), normalize_id(circuit.dest_stp_id)}
     ]
 
 

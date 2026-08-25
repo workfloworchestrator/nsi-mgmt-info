@@ -29,7 +29,7 @@ from pydantic import BaseModel, HttpUrl, computed_field
 
 from amiss.nsi import nsi_util_get_json
 from amiss.settings import settings
-from amiss.sources.reconcile import end_label, normalize_stp_id, sdp_capacity, sdp_ends, sdp_pair
+from amiss.sources.reconcile import end_label, normalize_id, sdp_capacity, sdp_ends, sdp_pair
 from amiss.sources.wfo import CircuitRow, SdpSub, is_terminated, short_id
 
 logger = structlog.get_logger(__name__)
@@ -157,7 +157,7 @@ def fetch_agg_circuits() -> list[AggCircuit] | None:
 
 def _touched(circuit: AggCircuit) -> set[str]:
     """Return the normalised STP ids the circuit's path touches (both ends of every segment)."""
-    return {nid for raw in _segment_ends(circuit) if (nid := normalize_stp_id(raw))}
+    return {nid for raw in _segment_ends(circuit) if (nid := normalize_id(raw))}
 
 
 def _segment_ends(circuit: AggCircuit) -> Iterator[str | None]:
@@ -167,9 +167,7 @@ def _segment_ends(circuit: AggCircuit) -> Iterator[str | None]:
 
 def _vlan_on_sdp(circuit: AggCircuit, pair: frozenset[str]) -> str | None:
     """Best-effort VLAN of the circuit at this SDP: the vlan on a segment end that is an SDP member."""
-    return next(
-        (vlan for raw in _segment_ends(circuit) if normalize_stp_id(raw) in pair and (vlan := _vlan_of(raw))), None
-    )
+    return next((vlan for raw in _segment_ends(circuit) if normalize_id(raw) in pair and (vlan := _vlan_of(raw))), None)
 
 
 # A WFO-backed circuit: its authoritative WFO record paired with the aggregator path it maps to.
