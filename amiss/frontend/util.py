@@ -44,7 +44,7 @@ def root_url(path: str) -> str:
 _NAV_LINKS = (
     ("Circuits", "/circuits"),
     ("Topology", "/topology"),
-    ("Switching", "/switching-service"),
+    ("Switch", "/switching-service"),
     ("STP", "/stp"),
     ("SDP", "/sdp"),
     ("Spectrum", "/spectrum"),
