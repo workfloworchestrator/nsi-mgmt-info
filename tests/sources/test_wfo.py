@@ -333,3 +333,154 @@ class TestFetch:
         with patch.object(wfo, "query_wfo", return_value=data):
             rows = fetch("t")
         assert [r.subscription_id for r in rows] == [expected_id]
+
+
+def _process(
+    process_id="p-1",
+    workflow_name="validate_stp",
+    last_status="inconsistent_data",
+    started_at="2026-08-24T01:10:00+00:00",
+    failed_reason="capacity drifted",
+    subscription_id="sub-1",
+):
+    """A processes-query node; a system task passes subscription_id=None (it validates no subscription)."""
+    page = [{"subscriptionId": subscription_id, "description": "some subscription"}] if subscription_id else []
+    return {
+        "processId": process_id,
+        "workflowName": workflow_name,
+        "workflowTarget": "VALIDATE" if subscription_id else "SYSTEM",
+        "lastStatus": last_status,
+        "failedReason": failed_reason,
+        "startedAt": started_at,
+        "subscriptions": {"page": page},
+    }
+
+
+class TestValidationFailures:
+    @pytest.mark.parametrize(
+        "last_status",
+        [
+            pytest.param("failed", id="failed"),
+            pytest.param("inconsistent_data", id="inconsistent-data"),
+            pytest.param("api_unavailable", id="api-unavailable"),
+        ],
+    )
+    def test_maps_every_failed_status(self, last_status):
+        # All three are subtypes of failed in orchestrator-core and must all reach the panel.
+        data = {"processes": {"page": [_process(last_status=last_status)], "pageInfo": {"totalItems": 1}}}
+        with patch.object(wfo, "query_wfo", return_value=data):
+            rows = wfo.fetch_validation_failures("t")
+        assert [(r.last_status, r.workflow_name) for r in rows] == [(last_status, "validate_stp")]
+
+    def test_maps_system_task_without_subscription(self):
+        data = {"processes": {"page": [_process(subscription_id=None)], "pageInfo": {"totalItems": 1}}}
+        with patch.object(wfo, "query_wfo", return_value=data):
+            rows = wfo.fetch_validation_failures("t")
+        assert rows[0].subscription_id is None and rows[0].short_id is None
+
+    def test_returns_none_on_failure(self):
+        with patch.object(wfo, "query_wfo", return_value=None):
+            assert wfo.fetch_validation_failures("t") is None
+
+    def test_formats_started_at_compactly(self):
+        data = {"processes": {"page": [_process()], "pageInfo": {"totalItems": 1}}}
+        with patch.object(wfo, "query_wfo", return_value=data):
+            rows = wfo.fetch_validation_failures("t")
+        assert rows[0].started_at == "2026-08-24 01:10:00"
+
+
+class TestDedupeFailures:
+    def test_collapses_repeats_and_keeps_the_newest(self):
+        # Same check, same subscription, three nights running: one row, count 3, newest kept.
+        rows = [
+            wfo._map_validation_failure(_process(process_id=f"p-{n}", started_at=f"2026-08-2{4 - n}T01:10:00+00:00"))
+            for n in range(3)
+        ]
+        deduped = wfo.dedupe_failures(rows)
+        assert len(deduped) == 1
+        assert deduped[0].occurrences == 3
+        assert deduped[0].process_id == "p-0"  # the newest, since rows arrive newest first
+
+    def test_keeps_distinct_checks_and_subscriptions_apart(self):
+        rows = [
+            wfo._map_validation_failure(_process(workflow_name="validate_stp", subscription_id="sub-1")),
+            wfo._map_validation_failure(_process(workflow_name="validate_sdp", subscription_id="sub-1")),
+            wfo._map_validation_failure(_process(workflow_name="validate_stp", subscription_id="sub-2")),
+        ]
+        deduped = wfo.dedupe_failures(rows)
+        assert len(deduped) == 3
+        assert all(row.occurrences == 1 for row in deduped)
+
+    def test_preserves_newest_first_order(self):
+        rows = [
+            wfo._map_validation_failure(_process(workflow_name="a", started_at="2026-08-24T03:00:00+00:00")),
+            wfo._map_validation_failure(_process(workflow_name="b", started_at="2026-08-24T02:00:00+00:00")),
+            wfo._map_validation_failure(_process(workflow_name="c", started_at="2026-08-24T01:00:00+00:00")),
+        ]
+        assert [row.workflow_name for row in wfo.dedupe_failures(rows)] == ["a", "b", "c"]
+
+    @pytest.mark.parametrize(
+        ("failed_reason", "expected"),
+        [
+            pytest.param(None, None, id="none"),
+            pytest.param("short reason", "short reason", id="untruncated"),
+            pytest.param("line one\n  line two", "line one line two", id="whitespace-collapsed"),
+            pytest.param("x" * 200, "x" * 120 + "…", id="truncated"),
+        ],
+    )
+    def test_reason_is_collapsed_and_truncated(self, failed_reason, expected):
+        row = wfo._map_validation_failure(_process(failed_reason=failed_reason))
+        assert row.reason == expected
+
+
+_named_fetches = pytest.mark.parametrize(
+    "fetch",
+    [
+        pytest.param(wfo.fetch_topology_subscriptions, id="topology"),
+        pytest.param(wfo.fetch_switching_service_subscriptions, id="switching-service"),
+    ],
+)
+
+
+class TestNamedSubscriptions:
+    @pytest.mark.parametrize(
+        ("fetch", "block", "values", "expected_id", "expected_name"),
+        [
+            pytest.param(
+                wfo.fetch_topology_subscriptions,
+                "topology",
+                {"topologyId": "urn:ogf:network:dom", "topologyName": "Dom"},
+                "urn:ogf:network:dom",
+                "Dom",
+                id="topology",
+            ),
+            pytest.param(
+                wfo.fetch_switching_service_subscriptions,
+                # one word on the product type, so one word in GraphQL
+                "switchingservice",
+                {"switchingServiceId": "urn:ogf:network:dom:ss", "switchingServiceName": "Dom SS"},
+                "urn:ogf:network:dom:ss",
+                "Dom SS",
+                id="switching-service",
+            ),
+        ],
+    )
+    def test_maps_id_and_name(self, fetch, block, values, expected_id, expected_name):
+        sub = {"subscriptionId": "sub-1", "status": "active", block: values}
+        data = {"subscriptions": {"page": [sub], "pageInfo": {"totalItems": 1}}}
+        with patch.object(wfo, "query_wfo", return_value=data):
+            rows = fetch("t")
+        assert (rows[0].object_id, rows[0].name, rows[0].status) == (expected_id, expected_name, "active")
+
+    @_named_fetches
+    def test_tolerates_a_missing_block(self, fetch):
+        # the single nullable GraphQL type means the block can be null on a non-active subscription
+        data = {"subscriptions": {"page": [{"subscriptionId": "sub-1"}], "pageInfo": {"totalItems": 1}}}
+        with patch.object(wfo, "query_wfo", return_value=data):
+            rows = fetch("t")
+        assert rows[0].object_id is None and rows[0].name is None
+
+    @_named_fetches
+    def test_returns_none_on_failure(self, fetch):
+        with patch.object(wfo, "query_wfo", return_value=None):
+            assert fetch("t") is None

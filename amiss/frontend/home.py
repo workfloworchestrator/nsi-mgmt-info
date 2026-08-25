@@ -26,23 +26,34 @@ from fastui.events import GoToEvent
 from starlette.requests import Request
 
 from amiss.data import NOT_AUTHORIZED
-from amiss.frontend.util import app_page, error_message, root_url, token_from_request
+from amiss.frontend.util import app_page, error_message, root_url, token_from_request, validation_failure_table
 from amiss.sources.aggregator import SpectrumView, build_spectrum, fetch_agg_circuits, split_unattributed
-from amiss.sources.dds_topology import fetch_dds_sdps, fetch_dds_stps
+from amiss.sources.dds_topology import (
+    fetch_dds_sdps,
+    fetch_dds_stps,
+    fetch_dds_switching_services,
+    fetch_dds_topologies,
+)
 from amiss.sources.reconcile import (
+    NamedReconciliation,
     ReconcileStatus,
     SdpReconciliation,
     StpReconciliation,
+    reconcile_named,
     reconcile_sdps,
     reconcile_stps,
 )
 from amiss.sources.wfo import (
     CircuitRow,
+    ValidationFailureRow,
     WfoUnauthorizedError,
     circuit_state_bucket,
     fetch_circuits,
     fetch_sdp_subscriptions,
     fetch_stp_subscriptions,
+    fetch_switching_service_subscriptions,
+    fetch_topology_subscriptions,
+    fetch_validation_failures,
 )
 
 logger = structlog.get_logger(__name__)
@@ -133,7 +144,9 @@ def _circuit_card(circuits: list[CircuitRow] | None) -> AnyComponent:
     return _card("Circuits", "/circuits", len(circuits) - buckets["terminated"], lines, unavailable=False)
 
 
-def _reconcile_card(title: str, url: str, result: StpReconciliation | SdpReconciliation) -> AnyComponent:
+def _reconcile_card(
+    title: str, url: str, result: StpReconciliation | SdpReconciliation | NamedReconciliation
+) -> AnyComponent:
     if result.error:
         return _card(title, url, None, [], unavailable=True)
     counts = Counter(row.status for row in result.rows)
@@ -157,6 +170,19 @@ def _spectrum_card(view: SpectrumView) -> AnyComponent:
     return _card("Spectrum", "/spectrum", len(sdps), lines, unavailable=False)
 
 
+def _validation_section(rows: list[ValidationFailureRow] | None) -> list[AnyComponent]:
+    """Build the failed-validation panel shown beneath the cards."""
+    heading = c.Heading(text="Validation", level=5, class_name="+ mt-4")
+    match rows:
+        case None:
+            body = error_message("Validation status unavailable.")
+        case []:
+            body = _stat_line("Validation failures", 0, Tone.GOOD)
+        case _:
+            body = validation_failure_table(rows)
+    return [heading, body]
+
+
 @router.get("/", response_model=FastUI, response_model_exclude_none=True)
 def home(request: Request) -> list[AnyComponent]:
     """Dashboard: a summary card per section, sources fetched live.
@@ -167,25 +193,42 @@ def home(request: Request) -> list[AnyComponent]:
     single consistent snapshot; wall-clock is the slowest single fetch, not their sum.
     """
     token = token_from_request(request)
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    with ThreadPoolExecutor(max_workers=11) as pool:
         circuits = pool.submit(_safe, fetch_circuits, token)
+        topo_subs = pool.submit(_safe, fetch_topology_subscriptions, token)
+        ss_subs = pool.submit(_safe, fetch_switching_service_subscriptions, token)
         stp_subs = pool.submit(_safe, fetch_stp_subscriptions, token)
         sdp_subs = pool.submit(_safe, fetch_sdp_subscriptions, token)
+        failures = pool.submit(_safe, fetch_validation_failures, token)
+        dds_topos = pool.submit(_safe, fetch_dds_topologies)
+        dds_ss = pool.submit(_safe, fetch_dds_switching_services)
         dds_stps = pool.submit(_safe, fetch_dds_stps)
         dds_sdps = pool.submit(_safe, fetch_dds_sdps)
         agg = pool.submit(_safe, fetch_agg_circuits)
+    # Every WFO future must be resolved inside this guard; see CLAUDE.md.
     try:
-        circuit_rows, sdp_rows = circuits.result(), sdp_subs.result()
+        circuit_rows = circuits.result()
+        topo_rows = topo_subs.result()
+        ss_rows = ss_subs.result()
+        stp_rows = stp_subs.result()
+        sdp_rows = sdp_subs.result()
+        failure_rows = failures.result()
     except WfoUnauthorizedError:
         return app_page(c.Markdown(text=introduction), error_message(NOT_AUTHORIZED), title="Dashboard")
     cards = [
         _circuit_card(circuit_rows),
-        _reconcile_card("Termination Points", "/stp", reconcile_stps(stp_subs.result(), dds_stps.result())),
+        _reconcile_card("Topologies", "/topology", reconcile_named(topo_rows, dds_topos.result(), "Topology")),
+        _reconcile_card(
+            "Switching Services",
+            "/switching-service",
+            reconcile_named(ss_rows, dds_ss.result(), "Switching service"),
+        ),
+        _reconcile_card("Termination Points", "/stp", reconcile_stps(stp_rows, dds_stps.result())),
         _reconcile_card("Demarcation Points", "/sdp", reconcile_sdps(sdp_rows, dds_sdps.result())),
         _spectrum_card(build_spectrum(sdp_rows, agg.result(), circuit_rows)),
     ]
     dashboard = c.Div(
-        components=[c.Div(components=[card], class_name="+ col-12 col-md-3 mb-3") for card in cards],
+        components=[c.Div(components=[card], class_name="+ col-12 col-md-4 mb-3") for card in cards],
         class_name="+ row",
     )
-    return app_page(c.Markdown(text=introduction), dashboard, title="Dashboard")
+    return app_page(c.Markdown(text=introduction), dashboard, *_validation_section(failure_rows), title="Dashboard")

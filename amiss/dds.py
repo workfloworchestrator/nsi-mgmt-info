@@ -23,23 +23,26 @@ def strip_urn(urn: str) -> str:
     return urn.replace("urn:ogf:network:", "")
 
 
-def get_dds_proxy_stps(proxy_url: HttpUrl) -> bytes | None:
-    """Fetch all service termination points from the DDS proxy.
+def get_dds_proxy_list(proxy_url: HttpUrl, path: str) -> bytes | None:
+    """Fetch a DDS proxy collection endpoint; ``None`` if the request failed."""
+    return nsi_util_get_json(HttpUrl(f"{str(proxy_url).rstrip('/')}{path}"), {})
 
-    Calls the proxy's ``GET /service-termination-points`` endpoint; ``proxy_url`` is the proxy base
-    URL, the path is appended to it. Returns the raw JSON body as bytes, or ``None`` if the request
-    failed (``nsi_util_get_json`` already logs the reason).
-    """
-    stps_url = HttpUrl(f"{str(proxy_url).rstrip('/')}/service-termination-points")
-    return nsi_util_get_json(stps_url, {})
+
+def get_dds_proxy_topologies(proxy_url: HttpUrl) -> bytes | None:
+    """Fetch all topologies from the DDS proxy (``GET /topologies``)."""
+    return get_dds_proxy_list(proxy_url, "/topologies")
+
+
+def get_dds_proxy_switching_services(proxy_url: HttpUrl) -> bytes | None:
+    """Fetch all switching services from the DDS proxy (``GET /switching-services``)."""
+    return get_dds_proxy_list(proxy_url, "/switching-services")
+
+
+def get_dds_proxy_stps(proxy_url: HttpUrl) -> bytes | None:
+    """Fetch all service termination points from the DDS proxy (``GET /service-termination-points``)."""
+    return get_dds_proxy_list(proxy_url, "/service-termination-points")
 
 
 def get_dds_proxy_sdps(proxy_url: HttpUrl) -> bytes | None:
-    """Fetch all service demarcation points from the DDS proxy.
-
-    Calls the proxy's ``GET /service-demarcation-points`` endpoint; ``proxy_url`` is the proxy base
-    URL, the path is appended to it. Returns the raw JSON body as bytes, or ``None`` if the request
-    failed (``nsi_util_get_json`` already logs the reason).
-    """
-    sdps_url = HttpUrl(f"{str(proxy_url).rstrip('/')}/service-demarcation-points")
-    return nsi_util_get_json(sdps_url, {})
+    """Fetch all service demarcation points from the DDS proxy (``GET /service-demarcation-points``)."""
+    return get_dds_proxy_list(proxy_url, "/service-demarcation-points")

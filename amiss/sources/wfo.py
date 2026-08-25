@@ -21,6 +21,7 @@ apart from "empty"; a refusal of the caller's credentials instead raises :class:
 """
 
 import json
+from collections import Counter
 from datetime import datetime
 
 import requests
@@ -37,6 +38,8 @@ logger = structlog.get_logger(__name__)
 MDP2P_TYPE = "MultiDomainPoint2PointSubscription"
 STP_TYPE = "ServiceTerminationPointSubscription"
 SDP_TYPE = "ServiceDemarcationPointSubscription"
+TOPOLOGY_TYPE = "TopologySubscription"
+SWITCHING_SERVICE_TYPE = "SwitchingServiceSubscription"
 
 CIRCUITS_QUERY = """
 { subscriptions(first: 500, filterBy: [{field: "tag", value: "MDP2P"}]) {
@@ -68,6 +71,38 @@ SDP_QUERY = """
   pageInfo { totalItems }
 } }
 """ % {"sdp": SDP_TYPE}
+
+
+# api_unavailable and inconsistent_data are subtypes of failed; see CLAUDE.md.
+VALIDATION_FAILURES_QUERY = """
+{ processes(filterBy: [{field: "lastStatus", value: "failed|inconsistent_data|api_unavailable"},
+                       {field: "target", value: "VALIDATE|SYSTEM"}],
+            sortBy: [{field: "startedAt", order: DESC}], first: 100) {
+  page {
+    processId workflowName workflowTarget lastStatus failedReason startedAt
+    subscriptions(first: 1) { page { subscriptionId description } } }
+  pageInfo { totalItems }
+} }
+"""
+
+_REASON_LENGTH = 120
+
+
+TOPOLOGY_QUERY = """
+{ subscriptions(first: 1000, filterBy: [{field: "tag", value: "TOPOLOGY"}]) {
+  page { subscriptionId status
+    ... on %(topology)s { topology { topologyId topologyName } } }
+  pageInfo { totalItems }
+} }
+""" % {"topology": TOPOLOGY_TYPE}
+
+SWITCHING_SERVICE_QUERY = """
+{ subscriptions(first: 1000, filterBy: [{field: "tag", value: "SWITCHING_SERVICE"}]) {
+  page { subscriptionId status
+    ... on %(switching_service)s { switchingservice { switchingServiceId switchingServiceName } } }
+  pageInfo { totalItems }
+} }
+""" % {"switching_service": SWITCHING_SERVICE_TYPE}
 
 
 class WfoUnauthorizedError(Exception):
@@ -137,6 +172,15 @@ class CircuitRow(BaseModel):
         return self.created_by.split(" <")[0] if self.created_by else self.created_by
 
 
+class NamedSub(BaseModel):
+    """A Topology or SwitchingService subscription: an id and a name."""
+
+    subscription_id: str
+    object_id: str | None = None
+    name: str | None = None
+    status: str | None = None
+
+
 class StpSub(BaseModel):
     """An STP subscription from the WFO (the WFO side of the STP reconciliation)."""
 
@@ -164,6 +208,38 @@ class SdpSub(BaseModel):
     sdp_name: str | None = None
     status: str | None = None
     stps: list[SdpMember] = []
+
+
+class ValidationFailureRow(BaseModel):
+    """A failed validation/task process, rendered in the dashboard's validation panel."""
+
+    process_id: str
+    workflow_name: str
+    last_status: str | None = None
+    started_at: str | None = None  # 'YYYY-MM-DD HH:MM:SS'
+    failed_reason: str | None = None
+    subscription_id: str | None = None  # absent for system tasks, which validate no single subscription
+    description: str | None = None
+    occurrences: int = 1  # how many processes this row stands for, after deduplication
+
+    @property
+    def key(self) -> tuple[str, str | None]:
+        """What makes two failures the same problem: the same check on the same subscription."""
+        return self.workflow_name, self.subscription_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def short_id(self) -> str | None:
+        return short_id(self.subscription_id)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def reason(self) -> str | None:
+        """The failure reason, whitespace-collapsed and truncated for the table."""
+        if not self.failed_reason:
+            return None
+        reason = " ".join(self.failed_reason.split())
+        return reason if len(reason) <= _REASON_LENGTH else f"{reason[:_REASON_LENGTH]}…"
 
 
 def circuit_state_bucket(state: str | None) -> str:
@@ -223,13 +299,13 @@ def query_wfo(query: str, token: str | None) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def _page(data: dict) -> list[dict]:
-    """Return the ``subscriptions.page`` list, warning if the page limit truncated the result."""
-    subscriptions = data.get("subscriptions") or {}
-    page = subscriptions.get("page") or []
-    total = (subscriptions.get("pageInfo") or {}).get("totalItems")
+def _page(data: dict, root: str = "subscriptions") -> list[dict]:
+    """Return the ``<root>.page`` list, warning if the page limit truncated the result."""
+    node = data.get(root) or {}
+    page = node.get("page") or []
+    total = (node.get("pageInfo") or {}).get("totalItems")
     if isinstance(total, int) and total > len(page):
-        logger.warning("WFO result truncated by page limit", returned=len(page), total=total)
+        logger.warning("WFO result truncated by page limit", root=root, returned=len(page), total=total)
     return page
 
 
@@ -344,3 +420,60 @@ def fetch_sdp_subscriptions(token: str | None) -> list[SdpSub] | None:
     """Fetch SDP subscriptions from the WFO, or ``None`` on failure."""
     data = query_wfo(SDP_QUERY, token)
     return None if data is None else [_map_sdp(n) for n in _page(data)]
+
+
+def _map_named(sub: dict, block: str, id_field: str, name_field: str) -> NamedSub:
+    values = sub.get(block) or {}
+    return NamedSub(
+        subscription_id=sub["subscriptionId"],
+        object_id=values.get(id_field),
+        name=values.get(name_field),
+        status=sub.get("status"),
+    )
+
+
+def _fetch_named(query: str, token: str | None, block: str, id_field: str, name_field: str) -> list[NamedSub] | None:
+    data = query_wfo(query, token)
+    return None if data is None else [_map_named(n, block, id_field, name_field) for n in _page(data)]
+
+
+def fetch_topology_subscriptions(token: str | None) -> list[NamedSub] | None:
+    """Fetch Topology subscriptions from the WFO, or ``None`` on failure."""
+    return _fetch_named(TOPOLOGY_QUERY, token, "topology", "topologyId", "topologyName")
+
+
+def fetch_switching_service_subscriptions(token: str | None) -> list[NamedSub] | None:
+    """Fetch SwitchingService subscriptions from the WFO, or ``None`` on failure."""
+    return _fetch_named(
+        SWITCHING_SERVICE_QUERY, token, "switchingservice", "switchingServiceId", "switchingServiceName"
+    )
+
+
+def _map_validation_failure(process: dict) -> ValidationFailureRow:
+    subscription: dict = next(iter(((process.get("subscriptions") or {}).get("page")) or []), {})
+    return ValidationFailureRow(
+        process_id=process["processId"],
+        workflow_name=process["workflowName"],
+        last_status=process.get("lastStatus"),
+        started_at=_format_ts(process.get("startedAt")),
+        failed_reason=process.get("failedReason"),
+        subscription_id=subscription.get("subscriptionId"),
+        description=subscription.get("description"),
+    )
+
+
+def dedupe_failures(rows: list[ValidationFailureRow]) -> list[ValidationFailureRow]:
+    """Collapse repeated failures of the same check on the same subscription into one counted row.
+
+    Rows arrive newest first; iterating oldest-first lets the later write win, so the surviving row is
+    the most recent, and reversing restores newest-first order.
+    """
+    counts = Counter(row.key for row in rows)
+    newest = {row.key: row for row in reversed(rows)}
+    return [row.model_copy(update={"occurrences": counts[row.key]}) for row in reversed(newest.values())]
+
+
+def fetch_validation_failures(token: str | None) -> list[ValidationFailureRow] | None:
+    """Fetch failed validation and system-task processes from the WFO, or ``None`` on failure."""
+    data = query_wfo(VALIDATION_FAILURES_QUERY, token)
+    return None if data is None else dedupe_failures([_map_validation_failure(p) for p in _page(data, "processes")])

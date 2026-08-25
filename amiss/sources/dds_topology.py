@@ -23,9 +23,15 @@ import json
 
 import structlog
 
-from amiss.dds import get_dds_proxy_sdps, get_dds_proxy_stps, strip_urn
+from amiss.dds import (
+    get_dds_proxy_sdps,
+    get_dds_proxy_stps,
+    get_dds_proxy_switching_services,
+    get_dds_proxy_topologies,
+    strip_urn,
+)
 from amiss.settings import settings
-from amiss.sources.reconcile import DdsSdp, DdsStp
+from amiss.sources.reconcile import DdsNamed, DdsSdp, DdsStp
 
 logger = structlog.get_logger(__name__)
 
@@ -57,6 +63,26 @@ def _to_dds_stp(item: dict) -> DdsStp | None:
 def _to_dds_sdp(item: dict) -> DdsSdp | None:
     stp_a, stp_z = item.get("stpAId"), item.get("stpZId")
     return DdsSdp(stp_a_id=strip_urn(stp_a), stp_z_id=strip_urn(stp_z)) if stp_a and stp_z else None
+
+
+def _to_dds_named(item: dict) -> DdsNamed | None:
+    object_id = item.get("id")
+    return DdsNamed(object_id=strip_urn(object_id), name=item.get("name")) if object_id else None
+
+
+def _fetch_named(raw: bytes | None, what: str) -> list[DdsNamed] | None:
+    items = _parse_list(raw, what)
+    return None if items is None else [named for item in items if (named := _to_dds_named(item))]
+
+
+def fetch_dds_topologies() -> list[DdsNamed] | None:
+    """Fetch the DDS-proxy topologies, or ``None`` on failure."""
+    return _fetch_named(get_dds_proxy_topologies(settings.NSI_DDS_PROXY_URL), "topologies")
+
+
+def fetch_dds_switching_services() -> list[DdsNamed] | None:
+    """Fetch the DDS-proxy switching services, or ``None`` on failure."""
+    return _fetch_named(get_dds_proxy_switching_services(settings.NSI_DDS_PROXY_URL), "switching services")
 
 
 def fetch_dds_stps() -> list[DdsStp] | None:

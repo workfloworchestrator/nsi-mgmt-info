@@ -25,6 +25,7 @@ from starlette.responses import HTMLResponse, PlainTextResponse, Response
 from amiss.frontend.circuits import router as circuits_router
 from amiss.frontend.healthcheck import router as healthcheck_router
 from amiss.frontend.home import router as home_router
+from amiss.frontend.inventory import switching_service_router, topology_router
 from amiss.frontend.sdp import router as sdp_router
 from amiss.frontend.spectrum import router as spectrum_router
 from amiss.frontend.stp import router as stp_router
@@ -59,6 +60,8 @@ async def log_request_time(request: Request, call_next: Callable[[Request], Awai
 # include routes
 app.include_router(healthcheck_router)
 app.include_router(circuits_router, prefix="/api/circuits")
+app.include_router(topology_router, prefix="/api/topology")
+app.include_router(switching_service_router, prefix="/api/switching-service")
 app.include_router(stp_router, prefix="/api/stp")
 app.include_router(sdp_router, prefix="/api/sdp")
 
