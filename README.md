@@ -210,18 +210,6 @@ If you prefer to build the image yourself, pass the version to stamp into the pa
 docker build --build-arg VERSION="$(uvx --from setuptools-scm python -m setuptools_scm)" -t nsi-mgmt-info .
 ```
 
-## Versioning
-
-The release git tag is the only place a version is written by hand. `pyproject.toml` declares
-`dynamic = ["version"]` and setuptools-scm derives it: a tag builds `0.1.1`, any other commit builds
-the next patch as a dev release with its commit, `0.1.2.dev3+g1a2b3c4`. AMISS logs that version at
-startup and exposes it via `importlib.metadata.version("nsi-mgmt-info")`.
-
-The container build has no `.git`, so `.github/workflows/container.yml` checks out with
-`fetch-depth: 0`, resolves the version on the runner, and passes it as `--build-arg VERSION=...`,
-which the `Dockerfile` hands to setuptools-scm as `SETUPTOOLS_SCM_PRETEND_VERSION_FOR_NSI_MGMT_INFO`.
-A build without that argument fails rather than producing a mislabelled image.
-
 ### On Kubernetes
 
 Store your client certificate and key in a Secret, then reference them in a Deployment:
@@ -335,3 +323,15 @@ volumes:
       secretName: mgmt-info-certs
 ```
 
+
+## Versioning
+
+The release git tag is the only place a version is written by hand. `pyproject.toml` declares
+`dynamic = ["version"]` and setuptools-scm derives it: a tag builds `0.1.2`, any other commit builds
+the next patch as a dev release with its commit, `0.1.3.dev3+g1a2b3c4`. AMISS logs that version at
+startup and exposes it via `importlib.metadata.version("nsi-mgmt-info")`.
+
+The container build has no `.git`, so `.github/workflows/container.yml` checks out with
+`fetch-depth: 0`, resolves the version on the runner, and passes it as `--build-arg VERSION=...`,
+which the `Dockerfile` hands to setuptools-scm as `SETUPTOOLS_SCM_PRETEND_VERSION_FOR_NSI_MGMT_INFO`.
+A build without that argument fails rather than producing a mislabelled image.
