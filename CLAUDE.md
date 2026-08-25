@@ -96,6 +96,15 @@ peer's topology, and subscribing to one is a deliberate act. These pages are inv
 **The WFO name wins** over the DDS name in `reconcile_named`: it is editable via the modify workflow,
 so a divergence is deliberate rather than drift.
 
+**Product tags are not derivable from the type name.** The `filterBy: {field: "tag"}` values in
+`wfo.py` are whatever the orchestrator's migrations set, and they do not all match the product type:
+`TOPOLOGY`, **`SWITCHINGSERVICE`** (no underscore), `STP`, `SDP`, `MDP2P`. A wrong tag is silent —
+the query returns an empty page, and the reconciliation renders every DDS entry as `DDS only` with
+zero `not in DDS`, which looks like a plausible unsubscribed estate rather than a bug. That exact
+asymmetry (N `DDS only`, 0 `not in DDS`) is the signature of a broken WFO-side query, not real drift.
+Verify a tag against `select tag from products` rather than assuming; the unit tests mock
+`query_wfo`, so they never exercise the tag string.
+
 **Patching accessors**: pages that import an accessor by name are patched on the *page* module
 (`patch("amiss.frontend.stp.get_stps")`). `inventory.py` is the exception — its router factory would
 capture a directly-passed function at import time, so it calls through the module (`data.get_topologies`)
