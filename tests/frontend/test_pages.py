@@ -64,8 +64,12 @@ def test_stat_line_tone_colour(tone, count, expected_class):
         pytest.param("FAILED", "failed", True, id="failed-in-failed"),
         pytest.param("failed", "failed", True, id="failed-case-insensitive"),
         pytest.param("ACTIVATED", "failed", False, id="activated-not-in-failed"),
+        pytest.param("RESERVED", "reserved", True, id="reserved-in-reserved"),
+        pytest.param("reserved", "reserved", True, id="reserved-case-insensitive"),
+        pytest.param("ACTIVATED", "reserved", False, id="activated-not-in-reserved"),
         pytest.param("TERMINATED", "terminated", True, id="terminated-in-terminated"),
         pytest.param("FAILED", "all", True, id="failed-in-all"),
+        pytest.param("RESERVED", "all", True, id="reserved-in-all"),
         pytest.param("ACTIVATED", "all", True, id="activated-in-all"),
     ],
 )
@@ -152,20 +156,22 @@ def _circuit_card_headline(cards) -> str | None:
     return next((t.get("text") for t in (headline or {}).get("components", [])), None)
 
 
-def test_dashboard_circuit_headline_excludes_terminated():
-    """The headline is the current estate, so terminated circuits count in the breakdown only."""
+def test_dashboard_circuit_headline_excludes_reserved_and_terminated():
+    """The headline counts the active estate, so Reserved and Terminated count in the breakdown only."""
     circuits = [
         CircuitRow(subscription_id="a", state="ACTIVATED"),
         CircuitRow(subscription_id="b", state="FAILED"),
         CircuitRow(subscription_id="c", state="TERMINATED"),
         CircuitRow(subscription_id="d", state="TERMINATED"),
+        CircuitRow(subscription_id="e", state="RESERVED"),
+        CircuitRow(subscription_id="f", state="RESERVED"),
     ]
     with ExitStack() as stack:
         for p in _dashboard_patches(fetch_circuits=circuits):
             stack.enter_context(p)
         cards = client.get("/api/").json()
     headline = _circuit_card_headline(cards)
-    assert headline == "2", f"expected 2 of 4 (two terminated excluded), got {headline}"
+    assert headline == "2", f"expected 2 of 6 (two terminated + two reserved excluded), got {headline}"
 
 
 def test_dashboard_fetches_each_source_once():
@@ -216,7 +222,22 @@ def test_circuits_failed_tab_filters_by_state():
     assert "bad" in response.text and "ok" not in response.text
 
 
-@pytest.mark.parametrize("path", ["/api/circuits/terminated", "/api/circuits/all"], ids=["terminated", "all"])
+def test_circuits_reserved_tab_filters_by_state():
+    rows = [
+        CircuitRow(subscription_id="ok", state="ACTIVATED"),
+        CircuitRow(subscription_id="hold", state="RESERVED"),
+    ]
+    with patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)):
+        response = client.get("/api/circuits/reserved")
+    assert response.status_code == 200
+    assert "hold" in response.text and "ok" not in response.text
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/api/circuits/reserved", "/api/circuits/terminated", "/api/circuits/all"],
+    ids=["reserved", "terminated", "all"],
+)
 def test_circuit_tab_routes_render(path):
     with patch(
         "amiss.frontend.circuits.get_circuits",

@@ -93,7 +93,7 @@ class Tone(str, Enum):
 
     GOOD = "good"  # the healthy counter (green): Activated / backed by DDS
     BAD = "bad"  # the attention counter (red when > 0): Failed / not in DDS
-    NEUTRAL = "neutral"  # nice-to-know (muted): Terminated / DDS only
+    NEUTRAL = "neutral"  # nice-to-know (muted): Reserved / DDS only
 
 
 def _muted(text: str, class_name: str) -> AnyComponent:
@@ -137,11 +137,16 @@ def _circuit_card(circuits: list[CircuitRow] | None) -> AnyComponent:
     lines = [
         ("Activated", buckets["activated"], Tone.GOOD),
         ("Failed", buckets["failed"], Tone.BAD),
-        ("Terminated", buckets["terminated"], Tone.NEUTRAL),
+        ("Reserved", buckets["reserved"], Tone.NEUTRAL),
     ]
-    # The headline counts the circuits that still exist; terminated ones stay in the breakdown only,
-    # or the number would keep climbing with history and never reflect the current estate.
-    return _card("Circuits", "/circuits", len(circuits) - buckets["terminated"], lines, unavailable=False)
+    # The headline counts the activated estate; Reserved, Terminated, and Failed stay in the breakdown only.
+    return _card(
+        "Circuits",
+        "/circuits",
+        len(circuits) - buckets["reserved"] - buckets["terminated"],
+        lines,
+        unavailable=False,
+    )
 
 
 def _reconcile_card(

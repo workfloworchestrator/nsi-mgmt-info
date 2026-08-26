@@ -247,6 +247,8 @@ def circuit_state_bucket(state: str | None) -> str:
     match (state or "").upper():
         case "FAILED":
             return "failed"
+        case "RESERVED":
+            return "reserved"
         case "TERMINATED":
             return "terminated"
         case _:
