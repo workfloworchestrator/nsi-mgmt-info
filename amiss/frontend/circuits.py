@@ -58,6 +58,7 @@ class CircuitSortForm(BaseModel):
 CIRCUIT_TABS = (
     ("activated", "Activated", "/circuits"),
     ("failed", "Failed", "/circuits/failed"),
+    ("reserved", "Reserved", "/circuits/reserved"),
     ("terminated", "Terminated", "/circuits/terminated"),
     ("all", "All", "/circuits/all"),
 )
@@ -92,6 +93,12 @@ def circuits(request: Request, sort: str | None = None) -> list[AnyComponent]:
 def circuits_failed(request: Request, sort: str | None = None) -> list[AnyComponent]:
     """Circuits in the FAILED state."""
     return _circuits_view(request, "failed", sort)
+
+
+@router.get("/reserved", response_model=FastUI, response_model_exclude_none=True)
+def circuits_reserved(request: Request, sort: str | None = None) -> list[AnyComponent]:
+    """Circuits in the RESERVED state."""
+    return _circuits_view(request, "reserved", sort)
 
 
 @router.get("/terminated", response_model=FastUI, response_model_exclude_none=True)
