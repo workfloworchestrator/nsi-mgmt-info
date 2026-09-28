@@ -342,9 +342,14 @@ def _process(
     started_at="2026-08-24T01:10:00+00:00",
     failed_reason="capacity drifted",
     subscription_id="sub-1",
+    status="active",
 ):
     """A processes-query node; a system task passes subscription_id=None (it validates no subscription)."""
-    page = [{"subscriptionId": subscription_id, "description": "some subscription"}] if subscription_id else []
+    page = (
+        [{"subscriptionId": subscription_id, "description": "some subscription", "status": status}]
+        if subscription_id
+        else []
+    )
     return {
         "processId": process_id,
         "workflowName": workflow_name,
@@ -433,11 +438,17 @@ class TestDedupeFailures:
         assert row.reason == expected
 
 
-_named_fetches = pytest.mark.parametrize(
+_NAMED_FETCHES = [
+    pytest.param(wfo.fetch_topology_subscriptions, id="topology"),
+    pytest.param(wfo.fetch_switching_service_subscriptions, id="switching-service"),
+]
+_named_fetches = pytest.mark.parametrize("fetch", _NAMED_FETCHES)
+_inventory_fetches = pytest.mark.parametrize(
     "fetch",
     [
-        pytest.param(wfo.fetch_topology_subscriptions, id="topology"),
-        pytest.param(wfo.fetch_switching_service_subscriptions, id="switching-service"),
+        pytest.param(wfo.fetch_stp_subscriptions, id="stp"),
+        pytest.param(wfo.fetch_sdp_subscriptions, id="sdp"),
+        *_NAMED_FETCHES,
     ],
 )
 
@@ -484,3 +495,44 @@ class TestNamedSubscriptions:
     def test_returns_none_on_failure(self, fetch):
         with patch.object(wfo, "query_wfo", return_value=None):
             assert fetch("t") is None
+
+
+class TestTerminatedSubscriptions:
+    @_inventory_fetches
+    def test_inventory_query_excludes_terminated(self, fetch):
+        data = {"subscriptions": {"page": [], "pageInfo": {"totalItems": 0}}}
+        with patch.object(wfo, "query_wfo", return_value=data) as query:
+            fetch("t")
+        assert wfo.LIVE_FILTER in query.call_args.args[0]
+
+    @_inventory_fetches
+    @pytest.mark.parametrize("status", ["terminated", "TERMINATED"])
+    def test_inventory_backstop_drops_terminated(self, fetch, status):
+        page = [{"subscriptionId": "live", "status": "active"}, {"subscriptionId": "gone", "status": status}]
+        data = {"subscriptions": {"page": page, "pageInfo": {"totalItems": 2}}}
+        with patch.object(wfo, "query_wfo", return_value=data):
+            rows = fetch("t")
+        assert [r.subscription_id for r in rows] == ["live"]
+
+    def test_circuits_keep_terminated(self):
+        # /circuits has a Terminated tab, so the history stays.
+        data = {"subscriptions": {"page": [TERMINATED_SUBSCRIPTION], "pageInfo": {"totalItems": 1}}}
+        with patch.object(wfo, "query_wfo", return_value=data) as query:
+            rows = wfo.fetch_circuits("t")
+        assert [r.subscription_id for r in rows] == [TERMINATED_SUBSCRIPTION["subscriptionId"]]
+        assert wfo.LIVE_FILTER not in query.call_args.args[0]
+
+    @pytest.mark.parametrize(
+        ("subscription_id", "status", "kept"),
+        [
+            pytest.param("sub-1", "active", True, id="active-kept"),
+            pytest.param("sub-1", "terminated", False, id="terminated-dropped"),
+            pytest.param(None, None, True, id="system-task-kept"),
+        ],
+    )
+    def test_validation_failure_on_terminated_subscription(self, subscription_id, status, kept):
+        process = _process(subscription_id=subscription_id, status=status)
+        data = {"processes": {"page": [process], "pageInfo": {"totalItems": 1}}}
+        with patch.object(wfo, "query_wfo", return_value=data):
+            rows = wfo.fetch_validation_failures("t")
+        assert bool(rows) is kept

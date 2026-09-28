@@ -41,6 +41,9 @@ SDP_TYPE = "ServiceDemarcationPointSubscription"
 TOPOLOGY_TYPE = "TopologySubscription"
 SWITCHING_SERVICE_TYPE = "SwitchingServiceSubscription"
 
+# Inventory queries skip terminated subscriptions: the WFO keeps them as history, but the object is gone.
+LIVE_FILTER = '{field: "status", value: "!terminated"}'
+
 CIRCUITS_QUERY = """
 { subscriptions(first: 500, filterBy: [{field: "tag", value: "MDP2P"}]) {
   page {
@@ -57,20 +60,20 @@ CIRCUITS_QUERY = """
 """ % {"mdp2p": MDP2P_TYPE}
 
 STP_QUERY = """
-{ subscriptions(first: 1000, filterBy: [{field: "tag", value: "STP"}]) {
+{ subscriptions(first: 1000, filterBy: [{field: "tag", value: "STP"}, %(live)s]) {
   page { subscriptionId status
     ... on %(stp)s { stp { stpId stpName capacity labelGroup } } }
   pageInfo { totalItems }
 } }
-""" % {"stp": STP_TYPE}
+""" % {"stp": STP_TYPE, "live": LIVE_FILTER}
 
 SDP_QUERY = """
-{ subscriptions(first: 1000, filterBy: [{field: "tag", value: "SDP"}]) {
+{ subscriptions(first: 1000, filterBy: [{field: "tag", value: "SDP"}, %(live)s]) {
   page { subscriptionId status
     ... on %(sdp)s { sdp { sdpName stps { stpId stpName capacity labelGroup } } } }
   pageInfo { totalItems }
 } }
-""" % {"sdp": SDP_TYPE}
+""" % {"sdp": SDP_TYPE, "live": LIVE_FILTER}
 
 
 # api_unavailable and inconsistent_data are subtypes of failed; see CLAUDE.md.
@@ -80,7 +83,7 @@ VALIDATION_FAILURES_QUERY = """
             sortBy: [{field: "startedAt", order: DESC}], first: 100) {
   page {
     processId workflowName workflowTarget lastStatus failedReason startedAt
-    subscriptions(first: 1) { page { subscriptionId description } } }
+    subscriptions(first: 1) { page { subscriptionId description status } } }
   pageInfo { totalItems }
 } }
 """
@@ -89,20 +92,20 @@ _REASON_LENGTH = 120
 
 
 TOPOLOGY_QUERY = """
-{ subscriptions(first: 1000, filterBy: [{field: "tag", value: "TOPOLOGY"}]) {
+{ subscriptions(first: 1000, filterBy: [{field: "tag", value: "TOPOLOGY"}, %(live)s]) {
   page { subscriptionId status
     ... on %(topology)s { topology { topologyId topologyName } } }
   pageInfo { totalItems }
 } }
-""" % {"topology": TOPOLOGY_TYPE}
+""" % {"topology": TOPOLOGY_TYPE, "live": LIVE_FILTER}
 
 SWITCHING_SERVICE_QUERY = """
-{ subscriptions(first: 1000, filterBy: [{field: "tag", value: "SWITCHINGSERVICE"}]) {
+{ subscriptions(first: 1000, filterBy: [{field: "tag", value: "SWITCHINGSERVICE"}, %(live)s]) {
   page { subscriptionId status
     ... on %(switching_service)s { switchingservice { switchingServiceId switchingServiceName } } }
   pageInfo { totalItems }
 } }
-""" % {"switching_service": SWITCHING_SERVICE_TYPE}
+""" % {"switching_service": SWITCHING_SERVICE_TYPE, "live": LIVE_FILTER}
 
 
 class WfoUnauthorizedError(Exception):
@@ -256,7 +259,7 @@ def circuit_state_bucket(state: str | None) -> str:
 
 
 def is_terminated(state: str | None) -> bool:
-    """Whether a circuit is gone, as opposed to one that still exists in some form."""
+    """Whether a circuit's ``vc.state`` or a subscription's lifecycle ``status`` says it is gone."""
     return circuit_state_bucket(state) == "terminated"
 
 
@@ -309,6 +312,11 @@ def _page(data: dict, root: str = "subscriptions") -> list[dict]:
     if isinstance(total, int) and total > len(page):
         logger.warning("WFO result truncated by page limit", root=root, returned=len(page), total=total)
     return page
+
+
+def _live(data: dict) -> list[dict]:
+    """Return the page without terminated subscriptions; a backstop for ``LIVE_FILTER``, which tests cannot reach."""
+    return [sub for sub in _page(data) if not is_terminated(sub.get("status"))]
 
 
 def _created_by(sub: dict) -> str | None:
@@ -413,15 +421,15 @@ def fetch_circuits(token: str | None) -> list[CircuitRow] | None:
 
 
 def fetch_stp_subscriptions(token: str | None) -> list[StpSub] | None:
-    """Fetch STP subscriptions from the WFO, or ``None`` on failure."""
+    """Fetch the non-terminated STP subscriptions from the WFO, or ``None`` on failure."""
     data = query_wfo(STP_QUERY, token)
-    return None if data is None else [_map_stp(n) for n in _page(data)]
+    return None if data is None else [_map_stp(n) for n in _live(data)]
 
 
 def fetch_sdp_subscriptions(token: str | None) -> list[SdpSub] | None:
-    """Fetch SDP subscriptions from the WFO, or ``None`` on failure."""
+    """Fetch the non-terminated SDP subscriptions from the WFO, or ``None`` on failure."""
     data = query_wfo(SDP_QUERY, token)
-    return None if data is None else [_map_sdp(n) for n in _page(data)]
+    return None if data is None else [_map_sdp(n) for n in _live(data)]
 
 
 def _map_named(sub: dict, block: str, id_field: str, name_field: str) -> NamedSub:
@@ -436,23 +444,28 @@ def _map_named(sub: dict, block: str, id_field: str, name_field: str) -> NamedSu
 
 def _fetch_named(query: str, token: str | None, block: str, id_field: str, name_field: str) -> list[NamedSub] | None:
     data = query_wfo(query, token)
-    return None if data is None else [_map_named(n, block, id_field, name_field) for n in _page(data)]
+    return None if data is None else [_map_named(n, block, id_field, name_field) for n in _live(data)]
 
 
 def fetch_topology_subscriptions(token: str | None) -> list[NamedSub] | None:
-    """Fetch Topology subscriptions from the WFO, or ``None`` on failure."""
+    """Fetch the non-terminated Topology subscriptions from the WFO, or ``None`` on failure."""
     return _fetch_named(TOPOLOGY_QUERY, token, "topology", "topologyId", "topologyName")
 
 
 def fetch_switching_service_subscriptions(token: str | None) -> list[NamedSub] | None:
-    """Fetch SwitchingService subscriptions from the WFO, or ``None`` on failure."""
+    """Fetch the non-terminated SwitchingService subscriptions from the WFO, or ``None`` on failure."""
     return _fetch_named(
         SWITCHING_SERVICE_QUERY, token, "switchingservice", "switchingServiceId", "switchingServiceName"
     )
 
 
+def _process_subscription(process: dict) -> dict:
+    """Return the process's subscription, or ``{}`` for a system task, which validates none."""
+    return next(iter(_page(process)), {})
+
+
 def _map_validation_failure(process: dict) -> ValidationFailureRow:
-    subscription: dict = next(iter(((process.get("subscriptions") or {}).get("page")) or []), {})
+    subscription = _process_subscription(process)
     return ValidationFailureRow(
         process_id=process["processId"],
         workflow_name=process["workflowName"],
@@ -476,6 +489,12 @@ def dedupe_failures(rows: list[ValidationFailureRow]) -> list[ValidationFailureR
 
 
 def fetch_validation_failures(token: str | None) -> list[ValidationFailureRow] | None:
-    """Fetch failed validation and system-task processes from the WFO, or ``None`` on failure."""
+    """Fetch failed validation and system-task processes from the WFO, or ``None`` on failure.
+
+    Failures on terminated subscriptions are dropped here: the WFO has no process filter on subscription status.
+    """
     data = query_wfo(VALIDATION_FAILURES_QUERY, token)
-    return None if data is None else dedupe_failures([_map_validation_failure(p) for p in _page(data, "processes")])
+    if data is None:
+        return None
+    processes = [p for p in _page(data, "processes") if not is_terminated(_process_subscription(p).get("status"))]
+    return dedupe_failures([_map_validation_failure(p) for p in processes])
