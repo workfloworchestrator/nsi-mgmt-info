@@ -93,6 +93,14 @@ SwitchingService have no detail page — the table already shows every field the
 **A `DDS only` row is normal**, not an alarm: the DDS is the federated ANA registry carrying every
 peer's topology, and subscribing to one is a deliberate act. These pages are inventory.
 
+**Terminated subscriptions are dropped** from the inventory fetches (Topology, SwitchingService, STP,
+SDP) and from the validation panel; otherwise a terminated STP whose port left the DDS shows as `not in
+DDS`, and one sharing an id with its live successor can win the last-wins index. The inventory queries
+filter server-side (`LIVE_FILTER`, `status: "!terminated"`, so history cannot eat the `first: 1000`
+page), with a client-side `_live` backstop because the unit tests mock `query_wfo` and never see the
+filter string. The validation panel filters client-side only: core has no process filter on
+subscription status. Circuits keep theirs — `/circuits` has a Terminated tab.
+
 **The WFO name wins** over the DDS name in `reconcile_named`: it is editable via the modify workflow,
 so a divergence is deliberate rather than drift.
 
