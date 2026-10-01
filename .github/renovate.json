@@ -9,9 +9,13 @@
   "lockFileMaintenance": {
     "enabled": true,
     "automerge": true,
-    "minimumReleaseAge": null
+    "schedule": ["* 0-5 * * *"]
   },
   "packageRules": [
+    {
+      "matchUpdateTypes": ["lockFileMaintenance"],
+      "prPriority": 10
+    },
     {
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "all non-major dependencies",
@@ -19,17 +23,19 @@
       "automerge": true
     },
     {
-      "matchUpdateTypes": ["pin", "digest"],
+      "matchUpdateTypes": ["pin", "digest", "pinDigest"],
       "minimumReleaseAge": "0 days",
       "automerge": true
+    },
+    {
+      "matchManagers": ["helm-values"],
+      "matchPackageNames": ["ghcr.io/workfloworchestrator/nsi-mgmt-info"],
+      "pinDigests": false
     },
     {
       "matchPackageNames": ["python"],
       "enabled": false
     }
-  ],
-  "schedule": [
-    "* 1-5 * * 1-3"
   ],
   "timezone": "Europe/Amsterdam"
 }
