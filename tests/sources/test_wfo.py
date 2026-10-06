@@ -34,6 +34,7 @@ ACTIVE_SUBSCRIPTION = {
         "globalReservationId": "urn:uuid:1111",
         "connectionId": "conn-1",
         "state": "ACTIVE",
+        "lastError": None,
         "saps": [
             {"vlan": "100", "stp": {"stpId": "urn:ogf:network:a", "stpName": "Port A", "labelGroup": "1-4094"}},
             {"vlan": "200", "stp": {"stpId": "urn:ogf:network:z", "stpName": "Port Z", "labelGroup": "1-4094"}},
@@ -86,8 +87,14 @@ class TestMapCircuit:
                     "state": "ACTIVE",
                     "created_by": "alice",
                     "connection_id": "conn-1",
+                    "last_error": None,
                 },
                 id="active-full",
+            ),
+            pytest.param(
+                ACTIVE_SUBSCRIPTION | {"vc": ACTIVE_SUBSCRIPTION["vc"] | {"state": "FAILED", "lastError": "boom"}},
+                {"state": "FAILED", "last_error": "boom"},
+                id="failed-with-last-error",
             ),
             pytest.param(
                 TERMINATED_SUBSCRIPTION,

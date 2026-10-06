@@ -49,7 +49,7 @@ CIRCUITS_QUERY = """
   page {
     subscriptionId description status startDate endDate
     ... on %(mdp2p)s { vc {
-      circuitDescription serviceSpeed globalReservationId connectionId state
+      circuitDescription serviceSpeed globalReservationId connectionId state lastError
       saps { vlan stp { stpId stpName capacity labelGroup } } } }
     processes(filterBy: [{field: "target", value: "CREATE"}],
               sortBy: [{field: "startedAt", order: ASC}], first: 10) {
@@ -157,6 +157,7 @@ class CircuitRow(BaseModel):
     created_by: str | None = None  # 'Full Name <email>' from the WFO; the list shows created_by_name
     connection_id: str | None = None
     global_reservation_id: str | None = None
+    last_error: str | None = None  # the aggregator's reason for the last failed operation
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -383,6 +384,7 @@ def _map_circuit(sub: dict) -> CircuitRow:
         created_by=_created_by(sub),
         connection_id=vc.get("connectionId"),
         global_reservation_id=vc.get("globalReservationId"),
+        last_error=vc.get("lastError"),
     )
 
 

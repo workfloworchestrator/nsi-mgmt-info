@@ -122,6 +122,13 @@ def _path_section(path: list[PathSegment] | None) -> AnyComponent:
     return segment_table(path)
 
 
+def _failure_banner(circuit: CircuitRow) -> list[AnyComponent]:
+    """Why a failed circuit failed, shown above its details; the field stays in the details either way."""
+    if circuit_state_bucket(circuit.state) != "failed" or not circuit.last_error:
+        return []
+    return [c.Div(components=[c.Text(text=circuit.last_error)], class_name="+ alert alert-danger")]
+
+
 @router.get("/{subscription_id}/", response_model=FastUI, response_model_exclude_none=True)
 def circuit_details(request: Request, subscription_id: str) -> list[AnyComponent]:
     """Display a single circuit (WFO), re-fetched live by subscription id, plus its aggregator path."""
@@ -134,6 +141,7 @@ def circuit_details(request: Request, subscription_id: str) -> list[AnyComponent
     path = get_circuit_path(circuit.connection_id) if circuit.connection_id else []
     return app_page(
         back_button("/circuits"),
+        *_failure_banner(circuit),
         # the merged source/dest are list-only; the detail shows the raw stp/vlan fields instead
         c.Details(data=circuit, fields=detail_fields(CircuitRow, exclude={"source", "dest"})),
         c.Heading(text="Path", level=4),
