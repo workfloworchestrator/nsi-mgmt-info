@@ -104,6 +104,11 @@ subscription status. Circuits keep theirs — `/circuits` has a Terminated tab.
 **The WFO name wins** over the DDS name in `reconcile_named`: it is editable via the modify workflow,
 so a divergence is deliberate rather than drift.
 
+**A field in a WFO query must exist in that orchestrator first.** GraphQL rejects the whole query for
+an unknown field, so `CIRCUITS_QUERY` asking for `vc { lastError }` against an orchestrator without the
+`last_error` migration turns every circuit page and the dashboard card into "unreachable". Deploy the
+orchestrator (and run its migration) before an AMISS that queries a new block field.
+
 **Product tags are not derivable from the type name.** The `filterBy: {field: "tag"}` values in
 `wfo.py` are whatever the orchestrator's migrations set, and they do not all match the product type:
 `TOPOLOGY`, **`SWITCHINGSERVICE`** (no underscore), `STP`, `SDP`, `MDP2P`. A wrong tag is silent —

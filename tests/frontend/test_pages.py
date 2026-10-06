@@ -287,6 +287,24 @@ def test_circuit_detail_path_unavailable():
     assert "Path unavailable" in response.text
 
 
+@pytest.mark.parametrize(
+    ("state", "last_error", "banner"),
+    [
+        pytest.param("FAILED", "activateFailed: socket", True, id="failed-with-error"),
+        pytest.param("FAILED", None, False, id="failed-without-error"),
+        pytest.param("ACTIVATED", "activateFailed: socket", False, id="recovered-keeps-field-only"),
+    ],
+)
+def test_circuit_detail_last_error(state, last_error, banner):
+    rows = [CircuitRow(subscription_id="sub-1", state=state, last_error=last_error)]
+    with patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)):
+        page = client.get("/api/circuits/sub-1/").json()
+    alerts = [node for node in _walk(page) if "alert-danger" in str(node.get("className", ""))]
+    assert bool(alerts) is banner
+    assert last_error in _texts(alerts[0]) if banner else not alerts
+    assert "last_error" in str(page)  # the field is always in the details list
+
+
 def test_circuit_detail_not_found():
     with patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList()):
         response = client.get("/api/circuits/does-not-exist/")
