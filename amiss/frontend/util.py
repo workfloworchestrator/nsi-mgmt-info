@@ -292,7 +292,8 @@ def validation_failure_table(rows: list[ValidationFailureRow]) -> c.Table:
             DisplayLookup(field="occurrences", title="Times"),
             DisplayLookup(field="reason", title="Reason"),
         ],
-        class_name="+ small",
+        # Full reasons carry URNs with no spaces; validation-failures lets the cell break them.
+        class_name="+ small validation-failures",
     )
 
 

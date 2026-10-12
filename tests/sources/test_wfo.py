@@ -437,10 +437,10 @@ class TestDedupeFailures:
             pytest.param(None, None, id="none"),
             pytest.param("short reason", "short reason", id="untruncated"),
             pytest.param("line one\n  line two", "line one line two", id="whitespace-collapsed"),
-            pytest.param("x" * 200, "x" * 120 + "…", id="truncated"),
+            pytest.param("x" * 200, "x" * 200, id="untruncated-long"),
         ],
     )
-    def test_reason_is_collapsed_and_truncated(self, failed_reason, expected):
+    def test_reason_is_collapsed(self, failed_reason, expected):
         row = wfo._map_validation_failure(_process(failed_reason=failed_reason))
         assert row.reason == expected
 

@@ -88,8 +88,6 @@ VALIDATION_FAILURES_QUERY = """
 } }
 """
 
-_REASON_LENGTH = 120
-
 
 TOPOLOGY_QUERY = """
 { subscriptions(first: 1000, filterBy: [{field: "tag", value: "TOPOLOGY"}, %(live)s]) {
@@ -239,11 +237,8 @@ class ValidationFailureRow(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def reason(self) -> str | None:
-        """The failure reason, whitespace-collapsed and truncated for the table."""
-        if not self.failed_reason:
-            return None
-        reason = " ".join(self.failed_reason.split())
-        return reason if len(reason) <= _REASON_LENGTH else f"{reason[:_REASON_LENGTH]}…"
+        """The failure reason, whitespace-collapsed for the table; the cell wraps, so it is shown in full."""
+        return " ".join(self.failed_reason.split()) if self.failed_reason else None
 
 
 def circuit_state_bucket(state: str | None) -> str:
