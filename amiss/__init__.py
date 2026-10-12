@@ -90,7 +90,7 @@ _BRAND_STYLE = """
   .navbar .navbar-brand, .navbar .nav-link { color: #ffffff !important; }
   .navbar .nav-link.active { color: #57e0c4 !important; font-weight: 600 !important; }
   a, a:hover { color: #2a5c5c; }
-  .validation-failures td { overflow-wrap: anywhere; }
+  .validation-failures td:last-child { overflow-wrap: anywhere; }
 </style>
 """
 
