@@ -156,8 +156,8 @@ def _circuit_card_headline(cards) -> str | None:
     return next((t.get("text") for t in (headline or {}).get("components", [])), None)
 
 
-def test_dashboard_circuit_headline_excludes_reserved_and_terminated():
-    """The headline counts the active estate, so Reserved and Terminated count in the breakdown only."""
+def test_dashboard_circuit_headline_excludes_terminated():
+    """The headline counts Activated, Failed and Reserved; Terminated is left out."""
     circuits = [
         CircuitRow(subscription_id="a", state="ACTIVATED"),
         CircuitRow(subscription_id="b", state="FAILED"),
@@ -171,7 +171,7 @@ def test_dashboard_circuit_headline_excludes_reserved_and_terminated():
             stack.enter_context(p)
         cards = client.get("/api/").json()
     headline = _circuit_card_headline(cards)
-    assert headline == "2", f"expected 2 of 6 (two terminated + two reserved excluded), got {headline}"
+    assert headline == "4", f"expected 4 of 6 (two terminated excluded), got {headline}"
 
 
 def test_dashboard_fetches_each_source_once():

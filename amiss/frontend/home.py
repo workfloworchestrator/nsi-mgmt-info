@@ -139,11 +139,11 @@ def _circuit_card(circuits: list[CircuitRow] | None) -> AnyComponent:
         ("Failed", buckets["failed"], Tone.BAD),
         ("Reserved", buckets["reserved"], Tone.NEUTRAL),
     ]
-    # The headline counts the activated estate; Reserved, Terminated, and Failed stay in the breakdown only.
+    # The headline is the sum of the breakdown lines; only Terminated is left out.
     return _card(
         "Circuits",
         "/circuits",
-        len(circuits) - buckets["reserved"] - buckets["terminated"],
+        len(circuits) - buckets["terminated"],
         lines,
         unavailable=False,
     )
