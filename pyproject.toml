@@ -46,7 +46,7 @@ include = ["amiss*"]
 [dependency-groups]
 dev = [
     "mypy==2.4.0",
-    "ruff==0.16.10",
+    "ruff==0.17.0",
     "types-requests==2.33.0.20261006",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
