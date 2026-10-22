@@ -46,3 +46,8 @@ def get_dds_proxy_stps(proxy_url: HttpUrl) -> bytes | None:
 def get_dds_proxy_sdps(proxy_url: HttpUrl) -> bytes | None:
     """Fetch all service demarcation points from the DDS proxy (``GET /service-demarcation-points``)."""
     return get_dds_proxy_list(proxy_url, "/service-demarcation-points")
+
+
+def get_dds_proxy_nsas(proxy_url: HttpUrl) -> bytes | None:
+    """Fetch all network service agents from the DDS proxy (``GET /network-service-agents``)."""
+    return get_dds_proxy_list(proxy_url, "/network-service-agents")

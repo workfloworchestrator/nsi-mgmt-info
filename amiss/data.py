@@ -26,10 +26,20 @@ from pydantic import BaseModel
 
 from amiss.sources.aggregator import PathSegment, SpectrumView, build_spectrum, fetch_agg_circuits
 from amiss.sources.dds_topology import (
+    fetch_dds_nsas,
     fetch_dds_sdps,
     fetch_dds_stps,
     fetch_dds_switching_services,
     fetch_dds_topologies,
+)
+from amiss.sources.providers import (
+    PROVIDERS_UNAVAILABLE,
+    ProviderDetail,
+    ProviderList,
+    build_providers,
+    fetch_provider_reservations,
+    fetch_providers,
+    link_reservations,
 )
 from amiss.sources.reconcile import (
     DdsNamed,
@@ -189,6 +199,50 @@ def get_spectrum(token: str | None) -> SpectrumView:
     except Exception as e:
         logger.warning("building spectrum failed", error=str(e))
         return SpectrumView(error="Spectrum unavailable: the aggregator proxy or WFO could not be reached.")
+
+
+def get_providers() -> ProviderList:
+    """Return the peered uPAs joined with their DDS NSA documents (both proxies, concurrent)."""
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            upas = pool.submit(fetch_providers)
+            nsas = pool.submit(fetch_dds_nsas)
+        return build_providers(upas.result(), nsas.result())
+    except Exception as e:
+        logger.warning("fetching providers failed", error=str(e))
+        return ProviderList(error=PROVIDERS_UNAVAILABLE)
+
+
+def get_provider_detail(token: str | None, nsa_id: str) -> ProviderDetail:
+    """Return one provider and its reservations, linked to the WFO circuits and STPs they belong to.
+
+    The WFO only supplies links, so its failure leaves the links empty rather than failing the page. A
+    refused WFO credential is still reported as such.
+    """
+    try:
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            upas = pool.submit(fetch_providers)
+            nsas = pool.submit(fetch_dds_nsas)
+            reservations = pool.submit(fetch_provider_reservations, nsa_id)
+            circuits = pool.submit(fetch_circuits, token)
+            stps = pool.submit(fetch_stp_subscriptions, token)
+        wfo_circuits, stp_subs = circuits.result(), stps.result()
+        providers = build_providers(upas.result(), nsas.result())
+        upa_reservations = reservations.result()
+    except WfoUnauthorizedError:
+        return ProviderDetail(error=NOT_AUTHORIZED)
+    except Exception as e:
+        logger.warning("building the provider detail failed", nsa_id=nsa_id, error=str(e))
+        return ProviderDetail(error="Provider unavailable")
+    if providers.error:
+        return ProviderDetail(error=providers.error)
+    provider = next((row for row in providers.rows if row.nsa_id == nsa_id), None)
+    if provider is None or upa_reservations is None:
+        return ProviderDetail(provider=provider)
+    return ProviderDetail(
+        provider=provider,
+        reservations=link_reservations(upa_reservations, wfo_circuits, stp_subs),
+    )
 
 
 def get_circuit_path(connection_id: str | None) -> list[PathSegment] | None:

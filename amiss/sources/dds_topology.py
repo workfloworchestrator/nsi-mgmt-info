@@ -24,6 +24,7 @@ import json
 import structlog
 
 from amiss.dds import (
+    get_dds_proxy_nsas,
     get_dds_proxy_sdps,
     get_dds_proxy_stps,
     get_dds_proxy_switching_services,
@@ -31,6 +32,7 @@ from amiss.dds import (
     strip_urn,
 )
 from amiss.settings import settings
+from amiss.sources.providers import DdsNsa
 from amiss.sources.reconcile import DdsNamed, DdsSdp, DdsStp
 
 logger = structlog.get_logger(__name__)
@@ -89,6 +91,26 @@ def fetch_dds_stps() -> list[DdsStp] | None:
     """Fetch the DDS-proxy STP topology, or ``None`` on failure."""
     items = _parse_list(get_dds_proxy_stps(settings.NSI_DDS_PROXY_URL), "STPs")
     return None if items is None else [stp for item in items if (stp := _to_dds_stp(item))]
+
+
+def _to_dds_nsa(item: dict) -> DdsNsa | None:
+    nsa_id = item.get("id")
+    return (
+        DdsNsa(
+            nsa_id=nsa_id,
+            name=item.get("name"),
+            roles=item.get("roles") or [],
+            peers_with=item.get("peersWith") or [],
+        )
+        if nsa_id
+        else None
+    )
+
+
+def fetch_dds_nsas() -> list[DdsNsa] | None:
+    """Fetch every NSA the DDS knows, or ``None`` on failure."""
+    items = _parse_list(get_dds_proxy_nsas(settings.NSI_DDS_PROXY_URL), "network service agents")
+    return None if items is None else [nsa for item in items if (nsa := _to_dds_nsa(item))]
 
 
 def fetch_dds_sdps() -> list[DdsSdp] | None:

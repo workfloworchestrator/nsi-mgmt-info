@@ -138,21 +138,26 @@ def _map_circuit(circuit: dict) -> AggCircuit:
     )
 
 
-def fetch_agg_circuits() -> list[AggCircuit] | None:
-    """Fetch all reservations with their path segments from the aggregator proxy, or ``None`` on failure."""
-    url = HttpUrl(f"{str(settings.NSI_AGG_PROXY_URL).rstrip('/')}/reservations")
-    raw = nsi_util_get_json(url, {"detail": "full"})
+def get_agg_proxy_list(path: str, key: str, params: dict | None = None) -> list[dict] | None:
+    """Fetch an aggregator-proxy ``{key: [...]}`` endpoint and return its objects, or ``None`` on failure."""
+    raw = nsi_util_get_json(HttpUrl(f"{str(settings.NSI_AGG_PROXY_URL).rstrip('/')}{path}"), params or {})
     if raw is None:
         return None
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, ValueError) as e:
-        logger.warning("cannot parse aggregator response", error=str(e))
+        logger.warning("cannot parse aggregator response", path=path, error=str(e))
         return None
-    if not isinstance(data, dict) or not isinstance(data.get("reservations"), list):
-        logger.warning("aggregator response has no reservations list")
+    if not isinstance(data, dict) or not isinstance(data.get(key), list):
+        logger.warning("aggregator response has no list", path=path, key=key)
         return None
-    return [_map_circuit(reservation) for reservation in data["reservations"] if isinstance(reservation, dict)]
+    return [item for item in data[key] if isinstance(item, dict)]
+
+
+def fetch_agg_circuits() -> list[AggCircuit] | None:
+    """Fetch all reservations with their path segments from the aggregator proxy, or ``None`` on failure."""
+    items = get_agg_proxy_list("/reservations", "reservations", {"detail": "full"})
+    return None if items is None else [_map_circuit(reservation) for reservation in items]
 
 
 def _touched(circuit: AggCircuit) -> set[str]:

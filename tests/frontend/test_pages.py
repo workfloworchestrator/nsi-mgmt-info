@@ -26,6 +26,7 @@ from amiss.data import NOT_AUTHORIZED, CircuitList
 from amiss.frontend.circuits import _in_tab
 from amiss.frontend.home import Tone, _stat_line
 from amiss.sources.aggregator import UNATTRIBUTED_ID, CircuitOnSdp, PathSegment, SpectrumRow, SpectrumView
+from amiss.sources.providers import ProviderDetail, ProviderList, ProviderReservationRow, ProviderRow
 from amiss.sources.reconcile import (
     DdsStp,
     NamedReconciliation,
@@ -689,3 +690,94 @@ class TestInventoryPages:
         assert error.error in _texts(page)
         assert title in _texts(page)
         assert not any(n.get("type") == "Table" for n in _walk(page))
+
+
+# --- Providers ----------------------------------------------------------------------------------------
+
+_SUPA = "urn:ogf:network:surf.nl:2020:nsa:supa"
+_PROVIDER = ProviderRow(nsa_id=_SUPA, name="SURF uPA", provider_url="https://supa/provider")
+_RESERVATIONS = [
+    ProviderReservationRow(
+        connection_id="child-active",
+        lifecycle_state="Created",
+        subscription_id="sub-1",
+        source_stp="port-a?vlan=1",
+        source_stp_subscription_id="stp-a",
+    ),
+    ProviderReservationRow(connection_id="child-gone", lifecycle_state="Terminated"),
+    ProviderReservationRow(connection_id="child-failed", lifecycle_state="Failed"),
+]
+
+
+def test_provider_list_links_the_name_to_the_detail_page():
+    with patch("amiss.frontend.providers.get_providers", return_value=ProviderList(rows=[_PROVIDER])):
+        response = client.get("/api/providers")
+    assert response.status_code == 200
+    assert "SURF uPA" in response.text and "/providers/{nsa_id}/" in response.text
+
+
+def test_provider_list_error_banner():
+    with patch("amiss.frontend.providers.get_providers", return_value=ProviderList(error="Providers unavailable")):
+        page = client.get("/api/providers").json()
+    assert "Providers unavailable" in _texts(page)
+    assert not any(n.get("type") == "Table" for n in _walk(page))
+
+
+@pytest.mark.parametrize(
+    ("suffix", "shown", "hidden"),
+    [
+        pytest.param("", {"child-active"}, {"child-gone", "child-failed"}, id="active"),
+        pytest.param("terminated", {"child-gone"}, {"child-active", "child-failed"}, id="terminated"),
+        pytest.param("all", {"child-active", "child-gone", "child-failed"}, set(), id="all"),
+    ],
+)
+def test_provider_detail_tabs(suffix, shown, hidden):
+    detail = ProviderDetail(provider=_PROVIDER, reservations=_RESERVATIONS)
+    with patch("amiss.frontend.providers.get_provider_detail", return_value=detail) as get:
+        response = client.get(f"/api/providers/{_SUPA}/{suffix}")
+    assert response.status_code == 200
+    assert get.call_args.args[1] == _SUPA
+    assert all(cid in response.text for cid in shown) and not any(cid in response.text for cid in hidden)
+
+
+def test_provider_detail_unknown_tab_is_rejected():
+    with patch("amiss.frontend.providers.get_provider_detail") as get:
+        response = client.get(f"/api/providers/{_SUPA}/bogus")
+    assert response.status_code == 422 and not get.called
+
+
+def test_provider_detail_links_reservations_to_circuits_and_stps():
+    detail = ProviderDetail(provider=_PROVIDER, reservations=_RESERVATIONS)
+    with patch("amiss.frontend.providers.get_provider_detail", return_value=detail):
+        response = client.get(f"/api/providers/{_SUPA}/")
+    assert "/circuits/{subscription_id}/" in response.text
+    assert "/stp/{source_stp_subscription_id}/" in response.text
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected"),
+    [
+        pytest.param(ProviderDetail(), f"No provider with id {_SUPA}.", id="unknown-nsa"),
+        pytest.param(ProviderDetail(error=NOT_AUTHORIZED), NOT_AUTHORIZED, id="not-authorized"),
+        pytest.param(
+            ProviderDetail(provider=_PROVIDER),
+            "Reservations unavailable: the provider could not be reached.",
+            id="upa-unreachable",
+        ),
+        pytest.param(ProviderDetail(provider=_PROVIDER, reservations=[]), "_No reservations in this tab._", id="none"),
+    ],
+)
+def test_provider_detail_degrades(detail, expected):
+    with patch("amiss.frontend.providers.get_provider_detail", return_value=detail):
+        page = client.get(f"/api/providers/{_SUPA}/").json()
+    assert expected in _texts(page)
+
+
+def test_circuit_path_links_the_provider():
+    rows = [CircuitRow(subscription_id="sub-1", connection_id="conn-1")]
+    with (
+        patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)),
+        patch("amiss.frontend.circuits.get_circuit_path", return_value=[PathSegment(provider_nsa=_SUPA)]),
+    ):
+        response = client.get("/api/circuits/sub-1/")
+    assert "/providers/{provider_nsa}/" in response.text

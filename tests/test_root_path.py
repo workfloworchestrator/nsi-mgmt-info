@@ -27,6 +27,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from amiss.settings import Settings
+from amiss.sources.providers import ProviderDetail, ProviderReservationRow, ProviderRow
 
 _DASHBOARD_FETCHES = (
     "fetch_circuits",
@@ -210,6 +211,17 @@ class TestRootPathNavUrls:
     def test_nav_urls_with_root_path(self, app_with_root_path):
         urls = self._internal_urls(TestClient(app_with_root_path).get("/api/"))
         assert urls and all(url.startswith("/amiss/") for url in urls)
+        assert "/amiss/providers" in urls
+
+    def test_provider_detail_urls_with_root_path(self, app_with_root_path):
+        detail = ProviderDetail(
+            provider=ProviderRow(nsa_id="nsa", name="nsa"),
+            reservations=[ProviderReservationRow(connection_id="c", lifecycle_state="Created")],
+        )
+        with patch("amiss.frontend.providers.get_provider_detail", return_value=detail):
+            urls = self._internal_urls(TestClient(app_with_root_path).get("/api/providers/nsa/"))
+        assert "/amiss/providers/nsa/terminated" in urls and "/amiss/circuits/{subscription_id}/" in urls
+        assert all(url.startswith("/amiss/") for url in urls)
 
 
 class TestAuthReloadScript:

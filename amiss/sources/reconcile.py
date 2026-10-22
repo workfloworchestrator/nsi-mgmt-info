@@ -151,7 +151,7 @@ def normalize_id(raw: str | None) -> str | None:
     return normalized or None
 
 
-def _by_normalized_id[T](items: Iterable[T], id_of: Callable[[T], str | None]) -> dict[str, T]:
+def by_normalized_id[T](items: Iterable[T], id_of: Callable[[T], str | None]) -> dict[str, T]:
     """Index items by their normalised STP id, dropping those without one (last wins on collision)."""
     return {nid: item for item in items if (nid := normalize_id(id_of(item)))}
 
@@ -184,8 +184,8 @@ def reconcile_stps(wfo: list[StpSub] | None, dds: list[DdsStp] | None) -> StpRec
     """Reconcile WFO STP subscriptions against DDS STPs, matched on the normalised STP id."""
     if wfo is None or dds is None:
         return StpReconciliation(error="STP reconciliation unavailable: a source could not be reached")
-    wfo_by_id = _by_normalized_id(wfo, lambda s: s.stp_id)
-    dds_by_id = _by_normalized_id(dds, lambda d: d.stp_id)
+    wfo_by_id = by_normalized_id(wfo, lambda s: s.stp_id)
+    dds_by_id = by_normalized_id(dds, lambda d: d.stp_id)
     ids = sorted(set(wfo_by_id) | set(dds_by_id))
     return StpReconciliation(rows=[_stp_row(nid, wfo_by_id, dds_by_id) for nid in ids])
 
@@ -207,8 +207,8 @@ def reconcile_named(wfo: list[NamedSub] | None, dds: list[DdsNamed] | None, what
     """Reconcile WFO Topology/SwitchingService subscriptions against the DDS, matched on normalised id."""
     if wfo is None or dds is None:
         return NamedReconciliation(error=f"{what} reconciliation unavailable: a source could not be reached")
-    wfo_by_id = _by_normalized_id(wfo, lambda s: s.object_id)
-    dds_by_id = _by_normalized_id(dds, lambda d: d.object_id)
+    wfo_by_id = by_normalized_id(wfo, lambda s: s.object_id)
+    dds_by_id = by_normalized_id(dds, lambda d: d.object_id)
     ids = sorted(set(wfo_by_id) | set(dds_by_id))
     return NamedReconciliation(rows=[_named_row(nid, wfo_by_id, dds_by_id) for nid in ids])
 
@@ -232,7 +232,7 @@ def sdp_ends(wfo: SdpSub | None, stp_a: str, stp_z: str) -> tuple[SdpMember | No
     order a row displays, so the members are looked up by id — never by list position, or a row can
     show its two ends' values swapped against the columns beside them.
     """
-    by_id = _by_normalized_id(wfo.stps if wfo else [], lambda member: member.stp_id)
+    by_id = by_normalized_id(wfo.stps if wfo else [], lambda member: member.stp_id)
     return by_id.get(normalize_id(stp_a) or ""), by_id.get(normalize_id(stp_z) or "")
 
 
