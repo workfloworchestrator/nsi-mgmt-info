@@ -26,6 +26,7 @@ from amiss.frontend.circuits import router as circuits_router
 from amiss.frontend.healthcheck import router as healthcheck_router
 from amiss.frontend.home import router as home_router
 from amiss.frontend.inventory import switching_service_router, topology_router
+from amiss.frontend.providers import router as providers_router
 from amiss.frontend.sdp import router as sdp_router
 from amiss.frontend.spectrum import router as spectrum_router
 from amiss.frontend.stp import router as stp_router
@@ -66,6 +67,7 @@ app.include_router(stp_router, prefix="/api/stp")
 app.include_router(sdp_router, prefix="/api/sdp")
 
 app.include_router(spectrum_router, prefix="/api/spectrum")
+app.include_router(providers_router, prefix="/api/providers")
 app.include_router(home_router, prefix="/api")
 
 

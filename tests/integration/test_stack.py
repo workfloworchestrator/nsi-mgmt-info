@@ -97,6 +97,26 @@ AGG_RESERVATIONS = {
 }
 
 
+SUPA = "urn:ogf:network:surf.nl:2020:nsa:supa"
+
+PROVIDERS = {"providers": [{"nsaId": SUPA, "providerURL": "https://supa/provider", "networkIds": []}]}
+
+DDS_NSAS = [{"id": SUPA, "name": "SURF uPA", "roles": ["vnd.ogf.nsi.cs.v2.role.uPA"], "peersWith": []}]
+
+# SuPA's own view of the conn-1 middle segment: its own child connection id, the circuit's gri.
+UPA_RESERVATIONS = {
+    "providerNSA": SUPA,
+    "providerURL": "https://supa/provider",
+    "reservations": [
+        {"connectionId": "child-1", "globalReservationId": "urn:uuid:1", "description": "AMS-NYC",
+         "requesterNSA": "safnari",
+         "reservationState": "ReserveStart", "provisionState": "Provisioned", "lifecycleState": "Created",
+         "dataPlaneActive": True, "capacity": 10,
+         "sourceSTP": "urn:ogf:network:port-a?vlan=100", "destSTP": "urn:ogf:network:port-b?vlan=100"},
+    ],
+}  # fmt: skip
+
+
 def _wfo_callback(request):
     """Route the single /api/graphql endpoint to a payload based on the query's tag filter."""
     query = json.loads(request.body)["query"]
@@ -114,6 +134,14 @@ def upstreams(monkeypatch):
         mock.add(responses.GET, f"{DDS}/service-termination-points", json=DDS_STPS, content_type="application/json")
         mock.add(responses.GET, f"{DDS}/service-demarcation-points", json=DDS_SDPS, content_type="application/json")
         mock.add(responses.GET, f"{AGG}/reservations", json=AGG_RESERVATIONS, content_type="application/json")
+        mock.add(responses.GET, f"{AGG}/providers", json=PROVIDERS, content_type="application/json")
+        mock.add(
+            responses.GET,
+            f"{AGG}/providers/urn%3Aogf%3Anetwork%3Asurf.nl%3A2020%3Ansa%3Asupa/reservations",
+            json=UPA_RESERVATIONS,
+            content_type="application/json",
+        )
+        mock.add(responses.GET, f"{DDS}/network-service-agents", json=DDS_NSAS, content_type="application/json")
         yield
 
 
@@ -152,6 +180,22 @@ def test_spectrum_groups_circuit_under_crossed_sdp():
     response = _get("/api/spectrum")
     assert response.status_code == 200
     assert "A<->B" in response.text  # the WFO SDP name for the d1 link the circuit crosses
+
+
+@pytest.mark.usefixtures("upstreams")
+def test_providers_list_joins_the_dds_name():
+    response = _get("/api/providers")
+    assert response.status_code == 200
+    assert "SURF uPA" in response.text and "https://supa/provider" in response.text
+
+
+@pytest.mark.usefixtures("upstreams")
+def test_provider_detail_links_reservation_to_wfo_circuit_and_stp():
+    response = _get(f"/api/providers/{SUPA}/")
+    assert response.status_code == 200
+    page = response.text
+    # child-1 carries gri urn:uuid:1 -> WFO circuit c1; port-a -> STP subscription s-a
+    assert "child-1" in page and '"subscription_id":"c1"' in page and '"source_stp_subscription_id":"s-a"' in page
 
 
 @pytest.mark.usefixtures("upstreams")

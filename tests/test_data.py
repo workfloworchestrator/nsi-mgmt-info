@@ -14,6 +14,7 @@
 
 """Tests for amiss.data: the accessor that composes WFO + DDS fetches into rows (mocked sources)."""
 
+from contextlib import ExitStack
 from unittest.mock import patch
 
 import pytest
@@ -21,6 +22,7 @@ import pytest
 from amiss import data
 from amiss.sources import wfo
 from amiss.sources.aggregator import AggCircuit, PathSegment
+from amiss.sources.providers import PROVIDERS_UNAVAILABLE, DdsNsa, Upa, UpaReservation
 from amiss.sources.reconcile import DdsSdp, DdsStp, ReconcileStatus
 from amiss.sources.wfo import CircuitRow, SdpMember, SdpSub, StpSub, WfoUnauthorizedError
 
@@ -153,6 +155,79 @@ def test_accessors_never_raise_on_source_error(accessor):
     with patch.object(wfo, "query_wfo", side_effect=RuntimeError("mTLS misconfig")):
         result = getattr(data, accessor)("tok")
     assert result.error is not None and result.rows == []
+
+
+_SUPA = "urn:ogf:network:surf.nl:2020:nsa:supa"
+
+
+_PROVIDER_SOURCES = {
+    "fetch_providers": {"return_value": [Upa(nsa_id=_SUPA)]},
+    "fetch_dds_nsas": {"return_value": []},
+    "fetch_provider_reservations": {
+        "return_value": [UpaReservation(connection_id="child-1", global_reservation_id="urn:uuid:1")]
+    },
+    "fetch_circuits": {"return_value": [CircuitRow(subscription_id="sub-1", global_reservation_id="urn:uuid:1")]},
+    "fetch_stp_subscriptions": {"return_value": []},
+}
+
+
+def _provider_detail(**overrides):
+    """Run get_provider_detail with every source patched; overrides are patch kwargs per fetch."""
+    with ExitStack() as stack:
+        for name, kwargs in (_PROVIDER_SOURCES | overrides).items():
+            stack.enter_context(patch.object(data, name, **kwargs))
+        return data.get_provider_detail("tok", _SUPA)
+
+
+def test_get_provider_detail_links_the_circuit():
+    detail = _provider_detail()
+    assert detail.provider.nsa_id == _SUPA
+    assert [row.subscription_id for row in detail.reservations] == ["sub-1"]
+
+
+@pytest.mark.parametrize(
+    ("overrides", "has_provider", "error", "has_reservations"),
+    [
+        pytest.param({"fetch_circuits": {"return_value": None}}, True, None, True, id="wfo-down-only-drops-links"),
+        pytest.param({"fetch_provider_reservations": {"return_value": None}}, True, None, False, id="upa-down"),
+        pytest.param({"fetch_providers": {"return_value": [Upa(nsa_id="other")]}}, False, None, False, id="unknown"),
+        pytest.param(
+            {"fetch_providers": {"return_value": None}}, False, PROVIDERS_UNAVAILABLE, False, id="aggregator-down"
+        ),
+        pytest.param(
+            {"fetch_circuits": {"side_effect": WfoUnauthorizedError}}, False, data.NOT_AUTHORIZED, False, id="refused"
+        ),
+        pytest.param(
+            {"fetch_dds_nsas": {"side_effect": RuntimeError("boom")}},
+            False,
+            "Provider unavailable",
+            False,
+            id="never-raises",
+        ),
+    ],
+)
+def test_get_provider_detail_degrades(overrides, has_provider, error, has_reservations):
+    detail = _provider_detail(**overrides)
+    assert (detail.provider is not None, detail.error, detail.reservations is not None) == (
+        has_provider,
+        error,
+        has_reservations,
+    )
+
+
+@pytest.mark.parametrize(
+    ("fetch_kwargs", "expected_error"),
+    [
+        pytest.param({"return_value": [Upa(nsa_id=_SUPA)]}, None, id="joined"),
+        pytest.param({"side_effect": RuntimeError("boom")}, PROVIDERS_UNAVAILABLE, id="never-raises"),
+    ],
+)
+def test_get_providers(fetch_kwargs, expected_error):
+    with (
+        patch.object(data, "fetch_providers", **fetch_kwargs),
+        patch.object(data, "fetch_dds_nsas", return_value=[DdsNsa(nsa_id=_SUPA, name="SURF")]),
+    ):
+        assert data.get_providers().error == expected_error
 
 
 @pytest.mark.parametrize("accessor", _ACCESSORS)

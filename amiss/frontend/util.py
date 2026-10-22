@@ -23,6 +23,7 @@ from starlette.requests import Request
 
 from amiss.settings import settings
 from amiss.sources.aggregator import CircuitOnSdp, PathSegment, SpectrumRow
+from amiss.sources.providers import ProviderReservationRow, ProviderRow
 from amiss.sources.reconcile import NamedRow, ReconcileStatus, SdpRow, StpRow
 from amiss.sources.wfo import CircuitRow, ValidationFailureRow
 
@@ -48,6 +49,7 @@ _NAV_LINKS = (
     ("STP", "/stp"),
     ("SDP", "/sdp"),
     ("Spectrum", "/spectrum"),
+    ("Providers", "/providers"),
 )
 
 
@@ -208,8 +210,8 @@ def sort_form(form_model: type[BaseModel], submit_url: str, current: str | None)
 # Every list table leads with the 8-char subscription id, linking to that row's detail page. Rows
 # without a subscription (an STP/SDP the DDS knows but the WFO does not) render it as an inert '—':
 # FastUI drops a go-to event whose url interpolates a missing field.
-def _id_column(detail_path: str) -> DisplayLookup:
-    return DisplayLookup(field="short_id", title="ID", on_click=GoToEvent(url=root_url(detail_path)))
+def _id_column(detail_path: str, title: str = "ID") -> DisplayLookup:
+    return DisplayLookup(field="short_id", title=title, on_click=GoToEvent(url=root_url(detail_path)))
 
 
 def circuit_table(circuits: list[CircuitRow]) -> c.Table:
@@ -336,11 +338,44 @@ def segment_table(segments: list[PathSegment]) -> c.Table:
         data=segments,
         columns=[
             DisplayLookup(field="order"),
-            DisplayLookup(field="provider_nsa"),
+            DisplayLookup(field="provider_nsa", on_click=GoToEvent(url=root_url("/providers/{provider_nsa}/"))),
             DisplayLookup(field="source_stp"),
             DisplayLookup(field="dest_stp"),
             DisplayLookup(field="capacity"),
             DisplayLookup(field="status"),
+        ],
+        class_name="+ small",
+    )
+
+
+def provider_table(rows: list[ProviderRow]) -> c.Table:
+    return c.Table(
+        data_model=ProviderRow,
+        data=rows,
+        columns=[
+            DisplayLookup(field="name", on_click=GoToEvent(url=root_url("/providers/{nsa_id}/"))),
+            DisplayLookup(field="short_nsa_id", title="NSA ID"),
+            DisplayLookup(field="networks", title="Networks"),
+            DisplayLookup(field="provider_url", title="Provider URL"),
+        ],
+        class_name="+ small",
+    )
+
+
+def provider_reservation_table(rows: list[ProviderReservationRow]) -> c.Table:
+    return c.Table(
+        data_model=ProviderReservationRow,
+        data=rows,
+        columns=[
+            _id_column("/circuits/{subscription_id}/", title="Circuit"),
+            DisplayLookup(field="connection_id"),
+            DisplayLookup(field="source_stp", on_click=GoToEvent(url=root_url("/stp/{source_stp_subscription_id}/"))),
+            DisplayLookup(field="dest_stp", on_click=GoToEvent(url=root_url("/stp/{dest_stp_subscription_id}/"))),
+            DisplayLookup(field="capacity"),
+            DisplayLookup(field="reservation_state", title="Reservation"),
+            DisplayLookup(field="provision_state", title="Provision"),
+            DisplayLookup(field="lifecycle_state", title="Lifecycle"),
+            DisplayLookup(field="data_plane_active", title="Data plane"),
         ],
         class_name="+ small",
     )
