@@ -113,8 +113,6 @@ class TestFetch:
             UpaReservation(
                 connection_id="child-1",
                 global_reservation_id="urn:uuid:1",
-                description="AMS-NYC",
-                requester_nsa="urn:ogf:network:anaeng.global:2024:nsa:safnari",
                 reservation_state="ReserveStart",
                 provision_state="Provisioned",
                 lifecycle_state="Created",

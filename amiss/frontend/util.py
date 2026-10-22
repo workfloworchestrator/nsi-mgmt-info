@@ -369,11 +369,9 @@ def provider_reservation_table(rows: list[ProviderReservationRow]) -> c.Table:
         columns=[
             _id_column("/circuits/{subscription_id}/", title="Circuit"),
             DisplayLookup(field="connection_id"),
-            DisplayLookup(field="description"),
             DisplayLookup(field="source_stp", on_click=GoToEvent(url=root_url("/stp/{source_stp_subscription_id}/"))),
             DisplayLookup(field="dest_stp", on_click=GoToEvent(url=root_url("/stp/{dest_stp_subscription_id}/"))),
             DisplayLookup(field="capacity"),
-            DisplayLookup(field="requester_nsa", title="Requester"),
             DisplayLookup(field="reservation_state", title="Reservation"),
             DisplayLookup(field="provision_state", title="Provision"),
             DisplayLookup(field="lifecycle_state", title="Lifecycle"),

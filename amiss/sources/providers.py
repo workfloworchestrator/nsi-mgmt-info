@@ -54,8 +54,6 @@ class UpaReservation(BaseModel):
 
     connection_id: str
     global_reservation_id: str | None = None  # NSI makes it optional; the WFO sets it on every circuit
-    description: str | None = None
-    requester_nsa: str | None = None
     reservation_state: str | None = None
     provision_state: str | None = None
     lifecycle_state: str | None = None
@@ -138,8 +136,6 @@ def _to_reservation(item: dict) -> UpaReservation | None:
         UpaReservation(
             connection_id=connection_id,
             global_reservation_id=item.get("globalReservationId"),
-            description=item.get("description"),
-            requester_nsa=item.get("requesterNSA"),
             reservation_state=item.get("reservationState"),
             provision_state=item.get("provisionState"),
             lifecycle_state=item.get("lifecycleState"),
