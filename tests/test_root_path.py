@@ -223,6 +223,21 @@ class TestRootPathNavUrls:
         assert "/amiss/providers/nsa/terminated" in urls and "/amiss/circuits/{subscription_id}/" in urls
         assert all(url.startswith("/amiss/") for url in urls)
 
+    def test_circuit_detail_urls_with_root_path(self, app_with_root_path, monkeypatch):
+        """The STP/SDP links and the list button stay in-app; the orchestrator link is external, so unprefixed."""
+        from amiss.data import CircuitDetail
+        from amiss.settings import settings
+        from amiss.sources.wfo import CircuitRow
+
+        monkeypatch.setattr(settings, "NSI_AMISS_WFO_UI_URL", "https://orchestrator.example")
+        detail = CircuitDetail(circuit=CircuitRow(subscription_id="c"), path=[], sdps=[])
+        with patch("amiss.frontend.circuits.get_circuit_detail", return_value=detail):
+            resp = TestClient(app_with_root_path).get("/api/circuits/c/")
+        urls = self._internal_urls(resp)
+        assert {"/amiss/circuits", "/amiss/stp/{source_stp_subscription_id}/"} <= set(urls)
+        assert all(url.startswith("/amiss/") for url in urls)
+        assert "https://orchestrator.example/subscriptions/c" in find_values(resp.json(), "url")
+
 
 class TestAuthReloadScript:
     """The SPA shell injects auth-reload.js (re-login on expired session) with the ROOT_PATH prefix."""

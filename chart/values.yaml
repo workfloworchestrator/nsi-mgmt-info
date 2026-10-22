@@ -27,6 +27,8 @@ env:
 #  NSI_DDS_PROXY_URL: "http://dds.domain.example/dds/"
 #  NSI_AGG_PROXY_URL: "http://aggregator-proxy.domain.example/"
 #  NSI_AMISS_WFO_URL: "http://orchestrator.domain.example/mgmt"
+  # Orchestrator UI; detail pages get an "Open in orchestrator" button when set:
+#  NSI_AMISS_WFO_UI_URL: "https://orchestrator.domain.example"
   # The container image already binds 0.0.0.0:8080; only override if you change service.targetPort.
 #  NSI_AMISS_HOST: "0.0.0.0"
 #  NSI_AMISS_PORT: "8080"

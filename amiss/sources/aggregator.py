@@ -30,8 +30,16 @@ from pydantic import BaseModel, HttpUrl, computed_field
 from amiss.dds import strip_urn
 from amiss.nsi import nsi_util_get_json
 from amiss.settings import settings
-from amiss.sources.reconcile import end_label, normalize_id, sdp_capacity, sdp_ends, sdp_pair
-from amiss.sources.wfo import CircuitRow, SdpSub, endpoint_label, is_terminated, short_id
+from amiss.sources.reconcile import (
+    end_label,
+    end_subscription,
+    normalize_id,
+    sdp_capacity,
+    sdp_ends,
+    sdp_pair,
+    stp_subscriptions,
+)
+from amiss.sources.wfo import CircuitRow, SdpSub, StpSub, endpoint_label, is_terminated, short_id
 
 logger = structlog.get_logger(__name__)
 
@@ -45,6 +53,8 @@ class PathSegment(BaseModel):
     capacity: int | None = None
     provider_nsa: str | None = None
     status: str | None = None
+    source_stp_subscription_id: str | None = None  # set by link_segments where the WFO holds the STP
+    dest_stp_subscription_id: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -92,6 +102,8 @@ class SpectrumRow(BaseModel):
     sdp_name: str | None = None
     stp_a: str | None = None
     stp_z: str | None = None
+    stp_a_subscription_id: str | None = None
+    stp_z_subscription_id: str | None = None
     circuit_count: int = 0
     sdp_capacity: int | None = None  # the link's own size, the denominator of `utilisation`
     total_capacity: int = 0  # the sum reserved by the circuits crossing it
@@ -224,6 +236,8 @@ def _spectrum_row(sdp: SdpSub, pair: frozenset[str], members: list[_Backed]) -> 
         sdp_name=sdp.sdp_name,
         stp_a=end_label(end_a, stp_a),
         stp_z=end_label(end_z, stp_z),
+        stp_a_subscription_id=end_subscription(end_a),
+        stp_z_subscription_id=end_subscription(end_z),
         circuit_count=len(members),
         sdp_capacity=sdp_capacity(sdp),
         total_capacity=sum(wfo.bandwidth or 0 for _agg, wfo in members),
@@ -291,3 +305,25 @@ def build_spectrum(
     if unattributed:
         rows.append(_unattributed_row(unattributed))
     return SpectrumView(rows=rows)
+
+
+def sdps_crossed(view: SpectrumView, subscription_id: str) -> list[SpectrumRow] | None:
+    """Return the SDPs a circuit crosses, or ``None`` if the spectrum could not be built."""
+    if view.error:
+        return None
+    sdps, _unattributed = split_unattributed(view.rows)
+    return [row for row in sdps if any(circuit.subscription_id == subscription_id for circuit in row.circuits)]
+
+
+def link_segments(segments: list[PathSegment], stp_subs: list[StpSub] | None) -> list[PathSegment]:
+    """Attach the WFO STP subscription of each segment end; an STP in another domain stays unlinked."""
+    subscription_of = stp_subscriptions(stp_subs)
+    return [
+        segment.model_copy(
+            update={
+                "source_stp_subscription_id": subscription_of(segment.source_stp),
+                "dest_stp_subscription_id": subscription_of(segment.dest_stp),
+            }
+        )
+        for segment in segments
+    ]

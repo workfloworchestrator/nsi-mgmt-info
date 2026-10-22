@@ -13,19 +13,16 @@
 # limitations under the License.
 
 from collections import Counter
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
-from typing import TypeVar
 
-import structlog
 from fastapi import APIRouter
 from fastui import AnyComponent, FastUI
 from fastui import components as c
 from fastui.events import GoToEvent
 from starlette.requests import Request
 
-from amiss.data import NOT_AUTHORIZED
+from amiss.data import NOT_AUTHORIZED, safe
 from amiss.frontend.util import app_page, error_message, root_url, token_from_request, validation_failure_table
 from amiss.sources.aggregator import SpectrumView, build_spectrum, fetch_agg_circuits, split_unattributed
 from amiss.sources.dds_topology import (
@@ -56,25 +53,7 @@ from amiss.sources.wfo import (
     fetch_validation_failures,
 )
 
-logger = structlog.get_logger(__name__)
 router = APIRouter()
-
-_T = TypeVar("_T")
-
-
-def _safe(fn: Callable[..., _T], *args: object) -> _T | None:
-    """Run a source fetch, degrading any unexpected error to ``None`` so the dashboard never 500s.
-
-    A refused credential is let through: it makes every card read "unavailable", which is the very
-    misdiagnosis the pages avoid, and the dashboard is where a blocked user lands first.
-    """
-    try:
-        return fn(*args)
-    except WfoUnauthorizedError:
-        raise
-    except Exception as e:
-        logger.warning("dashboard source fetch failed", fn=fn.__name__, error=str(e))
-        return None
 
 
 introduction = """
@@ -195,21 +174,22 @@ def home(request: Request) -> list[AnyComponent]:
     Each upstream is fetched exactly once, all concurrently (blocking HTTP releases the GIL), then the
     cards are composed from the shared results via the same pure builders the pages use. Fetching once
     (vs. per-card accessors that each re-fetch) removes duplicate WFO queries and gives every card a
-    single consistent snapshot; wall-clock is the slowest single fetch, not their sum.
+    single consistent snapshot; wall-clock is the slowest single fetch, not their sum. A refused credential
+    is let through ``safe``: the dashboard is where a blocked user lands first, so it must not read as an outage.
     """
     token = token_from_request(request)
     with ThreadPoolExecutor(max_workers=11) as pool:
-        circuits = pool.submit(_safe, fetch_circuits, token)
-        topo_subs = pool.submit(_safe, fetch_topology_subscriptions, token)
-        ss_subs = pool.submit(_safe, fetch_switching_service_subscriptions, token)
-        stp_subs = pool.submit(_safe, fetch_stp_subscriptions, token)
-        sdp_subs = pool.submit(_safe, fetch_sdp_subscriptions, token)
-        failures = pool.submit(_safe, fetch_validation_failures, token)
-        dds_topos = pool.submit(_safe, fetch_dds_topologies)
-        dds_ss = pool.submit(_safe, fetch_dds_switching_services)
-        dds_stps = pool.submit(_safe, fetch_dds_stps)
-        dds_sdps = pool.submit(_safe, fetch_dds_sdps)
-        agg = pool.submit(_safe, fetch_agg_circuits)
+        circuits = pool.submit(safe, fetch_circuits, token)
+        topo_subs = pool.submit(safe, fetch_topology_subscriptions, token)
+        ss_subs = pool.submit(safe, fetch_switching_service_subscriptions, token)
+        stp_subs = pool.submit(safe, fetch_stp_subscriptions, token)
+        sdp_subs = pool.submit(safe, fetch_sdp_subscriptions, token)
+        failures = pool.submit(safe, fetch_validation_failures, token)
+        dds_topos = pool.submit(safe, fetch_dds_topologies)
+        dds_ss = pool.submit(safe, fetch_dds_switching_services)
+        dds_stps = pool.submit(safe, fetch_dds_stps)
+        dds_sdps = pool.submit(safe, fetch_dds_sdps)
+        agg = pool.submit(safe, fetch_agg_circuits)
     # Every WFO future must be resolved inside this guard; see CLAUDE.md.
     try:
         circuit_rows = circuits.result()

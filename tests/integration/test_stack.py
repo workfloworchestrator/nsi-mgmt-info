@@ -26,6 +26,7 @@ from fastapi.testclient import TestClient
 
 from amiss import app
 from amiss.settings import settings
+from tests.fastui_tree import walk
 
 client = TestClient(app)
 
@@ -48,8 +49,14 @@ CIRCUIT = {
         "connectionId": "conn-1",
         "state": "ACTIVATED",
         "saps": [
-            {"vlan": "100", "stp": {"stpId": "urn:ogf:network:port-a", "stpName": "Port A", "labelGroup": "1-4094"}},
-            {"vlan": "200", "stp": {"stpId": "urn:ogf:network:port-z", "stpName": "Port Z", "labelGroup": "1-4094"}},
+            {
+                "vlan": "100",
+                "stp": {"ownerSubscriptionId": "s-a", "stpId": "urn:ogf:network:port-a", "stpName": "Port A"},
+            },
+            {
+                "vlan": "200",
+                "stp": {"ownerSubscriptionId": "s-z", "stpId": "urn:ogf:network:port-z", "stpName": "Port Z"},
+            },
         ],
     },
     "processes": {
@@ -157,6 +164,19 @@ def test_circuits_render_from_wfo():
     # merged source/dest (stp + vlan) from vc.saps, and the creator from the CREATE process
     assert "Port A (vlan 100)" in response.text and "Port Z (vlan 200)" in response.text
     assert "alice" in response.text
+
+
+@pytest.mark.usefixtures("upstreams")
+def test_circuit_detail_links_its_stps_and_the_sdp_it_crosses():
+    page = _get("/api/circuits/c1/").json()
+    details = next(node for node in walk(page) if node.get("type") == "Details")
+    path, sdps = (node["data"] for node in walk(page) if node.get("type") == "Table")
+    # the SAP's STP block is owned by STP subscription s-a
+    assert details["data"]["source_stp_subscription_id"] == "s-a"
+    # the path joins on STP id: port-a is s-a, while port-b and the edges have no subscription (nulls are dropped)
+    links = [(seg.get("source_stp_subscription_id"), seg.get("dest_stp_subscription_id")) for seg in path]
+    assert links == [(None, "s-a"), ("s-a", None), (None, None)]
+    assert [sdp["subscription_id"] for sdp in sdps] == ["d1"]  # the SDP the middle segment crosses
 
 
 @pytest.mark.usefixtures("upstreams")

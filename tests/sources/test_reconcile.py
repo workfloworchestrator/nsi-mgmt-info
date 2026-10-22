@@ -161,6 +161,17 @@ class TestReconcileSdps:
         assert (row.stp_a_id, row.stp_z_id) == ("dom:portA", "dom:portB")
         assert row.vlan_range == "100-199 | 200-299"
 
+    def test_each_end_links_to_its_own_stp_subscription(self):
+        wfo = SdpSub(
+            subscription_id="sdp-1",
+            stps=[
+                SdpMember(stp_id="dom:portB", stp_subscription_id="stp-b"),
+                SdpMember(stp_id="dom:portA", stp_subscription_id="stp-a"),
+            ],
+        )
+        row = reconcile_sdps([wfo], [DdsSdp(stp_a_id="dom:portA", stp_z_id="dom:portB")]).rows[0]
+        assert (row.stp_a_subscription_id, row.stp_z_subscription_id) == ("stp-a", "stp-b")
+
     @pytest.mark.parametrize(
         ("stp_name", "expected"),
         [

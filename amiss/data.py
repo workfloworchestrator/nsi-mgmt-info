@@ -24,7 +24,16 @@ from concurrent.futures import ThreadPoolExecutor
 import structlog
 from pydantic import BaseModel
 
-from amiss.sources.aggregator import PathSegment, SpectrumView, build_spectrum, fetch_agg_circuits
+from amiss.sources.aggregator import (
+    AggCircuit,
+    PathSegment,
+    SpectrumRow,
+    SpectrumView,
+    build_spectrum,
+    fetch_agg_circuits,
+    link_segments,
+    sdps_crossed,
+)
 from amiss.sources.dds_topology import (
     fetch_dds_nsas,
     fetch_dds_sdps,
@@ -39,6 +48,7 @@ from amiss.sources.providers import (
     build_providers,
     fetch_provider_reservations,
     fetch_providers,
+    link_providers,
     link_reservations,
 )
 from amiss.sources.reconcile import (
@@ -115,8 +125,14 @@ def _get_named(
 
 
 def get_topologies(token: str | None) -> NamedReconciliation:
-    """Return the Topology rows reconciled between the WFO subscriptions and the DDS."""
-    return _get_named(token, fetch_topology_subscriptions, fetch_dds_topologies, "Topology")
+    """Return the Topology rows reconciled between the WFO subscriptions and the DDS, with their provider.
+
+    The providers only supply links, so their failure leaves the column empty rather than failing the page.
+    """
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        topologies = pool.submit(_get_named, token, fetch_topology_subscriptions, fetch_dds_topologies, "Topology")
+        providers = pool.submit(get_providers)
+    return link_providers(topologies.result(), providers.result(), lambda row: row.object_id)
 
 
 def get_switching_services(token: str | None) -> NamedReconciliation:
@@ -152,16 +168,30 @@ def get_sdps(token: str | None) -> SdpReconciliation:
         return SdpReconciliation(error="SDP data unavailable")
 
 
-def get_stp_detail(token: str | None) -> tuple[StpReconciliation, CircuitList]:
-    """Return the reconciled STP rows and the circuits, for the STP detail page.
+class StpDetail(BaseModel):
+    """The STP detail page's sources, each keeping its own ``error`` so the page degrades per section."""
 
-    Two independent legs, each keeping its own ``error``, so the page degrades per section: the STP's
-    own fields still render when only the circuit list could not be fetched.
+    stps: StpReconciliation
+    circuits: CircuitList
+    sdps: SdpReconciliation
+
+
+def get_stp_detail(token: str | None) -> StpDetail:
+    """Return the reconciled STPs, linked to their provider, plus the circuits and SDPs the page lists.
+
+    Independent legs, so the STP's own fields still render when only a related list could not be fetched;
+    the providers only supply links, so their failure leaves the provider empty.
     """
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         stps = pool.submit(get_stps, token)
         circuits = pool.submit(get_circuits, token)
-    return stps.result(), circuits.result()
+        sdps = pool.submit(get_sdps, token)
+        providers = pool.submit(get_providers)
+    return StpDetail(
+        stps=link_providers(stps.result(), providers.result(), lambda row: row.network),
+        circuits=circuits.result(),
+        sdps=sdps.result(),
+    )
 
 
 def get_sdp_detail(token: str | None) -> tuple[SdpReconciliation, SpectrumView]:
@@ -245,19 +275,69 @@ def get_provider_detail(token: str | None, nsa_id: str) -> ProviderDetail:
     )
 
 
-def get_circuit_path(connection_id: str | None) -> list[PathSegment] | None:
-    """Return a circuit's aggregator path segments, ``None`` if the aggregator is unreachable, ``[]`` if unknown.
+class CircuitDetail(BaseModel):
+    """A circuit detail page.
 
-    The aggregator uses AMISS's proxy identity (no user token). ``None`` distinguishes "aggregator down"
-    from ``[]`` ("no matching reservation / no segments") so the detail page can word the two differently.
+    ``circuit`` is ``None`` without an ``error`` when no circuit has that id. ``path`` is ``None`` when the
+    aggregator could not be reached and ``[]`` when it has no segments for the circuit; ``sdps`` is ``None``
+    when the SDPs crossed could not be worked out, so the page can word "unavailable" and "none" apart.
     """
-    # Reuse the list fetch and filter; switch to GET /reservations/{id} if this page gets hot.
+
+    circuit: CircuitRow | None = None
+    error: str | None = None
+    path: list[PathSegment] | None = None
+    sdps: list[SpectrumRow] | None = None
+
+
+def safe[T](fetch: Callable[..., T | None], *args: object) -> T | None:
+    """Run a source fetch, degrading any unexpected error to ``None`` so a page never 500s.
+
+    A refused credential is let through, so the page can say "not authorized" instead of "unavailable".
+    """
     try:
-        circuits = fetch_agg_circuits()
-        if circuits is None:
-            return None
-        match = next((circuit for circuit in circuits if circuit.connection_id == connection_id), None)
-        return match.segments if match else []
+        return fetch(*args)
+    except WfoUnauthorizedError:
+        raise
     except Exception as e:
-        logger.warning("fetching circuit path failed", error=str(e))
+        logger.warning("source fetch failed", fetch=getattr(fetch, "__name__", repr(fetch)), error=str(e))
         return None
+
+
+def _circuit_path(circuit: CircuitRow, agg_circuits: list[AggCircuit] | None) -> list[PathSegment] | None:
+    """Return the circuit's aggregator path segments, matched on connection id."""
+    # Reuse the list fetch and filter; switch to GET /reservations/{id} if this page gets hot.
+    if not circuit.connection_id:
+        return []
+    if agg_circuits is None:
+        return None
+    match = next((agg for agg in agg_circuits if agg.connection_id == circuit.connection_id), None)
+    return match.segments if match else []
+
+
+def get_circuit_detail(token: str | None, subscription_id: str) -> CircuitDetail:
+    """Return one circuit with its aggregator path and the SDPs it crosses, linked to their WFO subscriptions.
+
+    The aggregator uses AMISS's proxy identity (no user token). The STP subscriptions only supply links, so
+    their failure leaves the path unlinked rather than failing the page.
+    """
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            circuits = pool.submit(safe, fetch_circuits, token)
+            sdps = pool.submit(safe, fetch_sdp_subscriptions, token)
+            stps = pool.submit(safe, fetch_stp_subscriptions, token)
+            agg = pool.submit(safe, fetch_agg_circuits)
+        wfo_circuits, sdp_subs, stp_subs = circuits.result(), sdps.result(), stps.result()
+    except WfoUnauthorizedError:
+        return CircuitDetail(error=NOT_AUTHORIZED)
+    if wfo_circuits is None:
+        return CircuitDetail(error="Circuits unavailable: the WFO could not be reached.")
+    circuit = next((row for row in wfo_circuits if row.subscription_id == subscription_id), None)
+    if circuit is None:
+        return CircuitDetail()
+    agg_circuits = agg.result()
+    path = _circuit_path(circuit, agg_circuits)
+    return CircuitDetail(
+        circuit=circuit,
+        path=None if path is None else link_segments(path, stp_subs),
+        sdps=sdps_crossed(build_spectrum(sdp_subs, agg_circuits, wfo_circuits), subscription_id),
+    )

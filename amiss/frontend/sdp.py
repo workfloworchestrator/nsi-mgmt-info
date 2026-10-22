@@ -23,7 +23,7 @@ from starlette.requests import Request
 from amiss.data import get_sdp_detail, get_sdps
 from amiss.frontend.util import (
     app_page,
-    back_button,
+    detail_buttons,
     detail_fields,
     error_message,
     in_tab,
@@ -115,9 +115,11 @@ def sdp_details(request: Request, subscription_id: str) -> list[AnyComponent]:
     row = next((r for r in sdps.rows if r.subscription_id == subscription_id), None)
     if row is None:
         return app_page(title=f"No SDP with id {subscription_id}.")
+    links = {"stp_a_id": "/stp/{stp_a_subscription_id}/", "stp_z_id": "/stp/{stp_z_subscription_id}/"}
+    fields = detail_fields(SdpRow, links=links)
     return app_page(
-        back_button("/sdp"),
-        c.Details(data=row, fields=detail_fields(SdpRow)),
+        detail_buttons("/sdp", "SDPs", row.subscription_id),
+        c.Details(data=row, fields=fields),
         c.Heading(text="Circuits on this SDP", level=4),
         _circuits_section(spectrum, subscription_id),
         title=f"SDP {row.description or subscription_id}",

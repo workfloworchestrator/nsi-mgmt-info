@@ -11,13 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from collections.abc import Collection
+from collections.abc import Collection, Mapping, Sequence
+from string import Formatter
 from typing import Any
 
 from fastui import AnyComponent
 from fastui import components as c
 from fastui.components.display import DisplayLookup
-from fastui.events import GoToEvent
+from fastui.events import BackEvent, GoToEvent
 from pydantic import BaseModel
 from starlette.requests import Request
 
@@ -211,7 +212,15 @@ def sort_form(form_model: type[BaseModel], submit_url: str, current: str | None)
 # without a subscription (an STP/SDP the DDS knows but the WFO does not) render it as an inert '—':
 # FastUI drops a go-to event whose url interpolates a missing field.
 def _id_column(detail_path: str, title: str = "ID") -> DisplayLookup:
-    return DisplayLookup(field="short_id", title=title, on_click=GoToEvent(url=root_url(detail_path)))
+    return _linked("short_id", detail_path, title)
+
+
+def _linked(field: str, path: str, title: str | None = None) -> DisplayLookup:
+    """Show ``field``, linking to ``path``; the same missing-field rule leaves the cell inert."""
+    return DisplayLookup(field=field, title=title, on_click=GoToEvent(url=root_url(path)))
+
+
+provider_column = _linked("provider_name", "/providers/{provider_nsa}/", "Provider")
 
 
 def circuit_table(circuits: list[CircuitRow]) -> c.Table:
@@ -222,8 +231,8 @@ def circuit_table(circuits: list[CircuitRow]) -> c.Table:
             _id_column("/circuits/{subscription_id}/"),
             DisplayLookup(field="description"),
             DisplayLookup(field="start_time"),
-            DisplayLookup(field="source", title="Source"),
-            DisplayLookup(field="dest", title="Destination"),
+            _linked("source", "/stp/{source_stp_subscription_id}/", "Source"),
+            _linked("dest", "/stp/{dest_stp_subscription_id}/", "Destination"),
             DisplayLookup(field="bandwidth", title="Bandwidth"),
             DisplayLookup(field="state"),
             DisplayLookup(field="created_by_name", title="Created By"),
@@ -232,7 +241,7 @@ def circuit_table(circuits: list[CircuitRow]) -> c.Table:
     )
 
 
-def named_table(rows: list[NamedRow], id_title: str) -> c.Table:
+def named_table(rows: list[NamedRow], id_title: str, extra_columns: Sequence[DisplayLookup] = ()) -> c.Table:
     return c.Table(
         data_model=NamedRow,
         data=rows,
@@ -240,6 +249,7 @@ def named_table(rows: list[NamedRow], id_title: str) -> c.Table:
             DisplayLookup(field="short_id", title="ID"),
             DisplayLookup(field="short_object_id", title=id_title),
             DisplayLookup(field="description", title="Name"),
+            *extra_columns,
             DisplayLookup(field="wfo_status", title="Lifecycle"),
             DisplayLookup(field="status"),
         ],
@@ -271,8 +281,8 @@ def sdp_table(sdps: list[SdpRow]) -> c.Table:
         columns=[
             _id_column("/sdp/{subscription_id}/"),
             DisplayLookup(field="description"),
-            DisplayLookup(field="stp_a_name", title="STP A"),
-            DisplayLookup(field="stp_z_name", title="STP Z"),
+            _linked("stp_a_name", "/stp/{stp_a_subscription_id}/", "STP A"),
+            _linked("stp_z_name", "/stp/{stp_z_subscription_id}/", "STP Z"),
             DisplayLookup(field="vlan_range", title="VLANs"),
             DisplayLookup(field="capacity", title="Capacity"),
             DisplayLookup(field="status"),
@@ -304,9 +314,9 @@ def spectrum_sdp_table(rows: list[SpectrumRow]) -> c.Table:
         data_model=SpectrumRow,
         data=rows,
         columns=[
-            DisplayLookup(field="sdp_name", title="SDP", on_click=GoToEvent(url=root_url("/sdp/{subscription_id}/"))),
-            DisplayLookup(field="stp_a", title="STP A"),
-            DisplayLookup(field="stp_z", title="STP Z"),
+            _linked("sdp_name", "/sdp/{subscription_id}/", "SDP"),
+            _linked("stp_a", "/stp/{stp_a_subscription_id}/", "STP A"),
+            _linked("stp_z", "/stp/{stp_z_subscription_id}/", "STP Z"),
             DisplayLookup(field="circuit_count", title="Circuits"),
             DisplayLookup(field="sdp_capacity", title="Capacity"),
             DisplayLookup(field="total_capacity", title="Reserved"),
@@ -338,13 +348,9 @@ def segment_table(segments: list[PathSegment]) -> c.Table:
         data=segments,
         columns=[
             DisplayLookup(field="order"),
-            DisplayLookup(
-                field="short_provider_nsa",
-                title="Provider NSA",
-                on_click=GoToEvent(url=root_url("/providers/{provider_nsa}/")),
-            ),
-            DisplayLookup(field="source", title="Source STP"),
-            DisplayLookup(field="dest", title="Dest STP"),
+            _linked("short_provider_nsa", "/providers/{provider_nsa}/", "Provider NSA"),
+            _linked("source", "/stp/{source_stp_subscription_id}/", "Source STP"),
+            _linked("dest", "/stp/{dest_stp_subscription_id}/", "Dest STP"),
             DisplayLookup(field="capacity"),
             DisplayLookup(field="status"),
         ],
@@ -357,7 +363,7 @@ def provider_table(rows: list[ProviderRow]) -> c.Table:
         data_model=ProviderRow,
         data=rows,
         columns=[
-            DisplayLookup(field="name", on_click=GoToEvent(url=root_url("/providers/{nsa_id}/"))),
+            _linked("name", "/providers/{nsa_id}/"),
             DisplayLookup(field="short_nsa_id", title="NSA ID"),
             DisplayLookup(field="networks", title="Networks"),
             DisplayLookup(field="provider_url", title="Provider URL"),
@@ -373,14 +379,8 @@ def provider_reservation_table(rows: list[ProviderReservationRow]) -> c.Table:
         columns=[
             _id_column("/circuits/{subscription_id}/", title="Circuit"),
             DisplayLookup(field="connection_id"),
-            DisplayLookup(
-                field="source",
-                title="Source STP",
-                on_click=GoToEvent(url=root_url("/stp/{source_stp_subscription_id}/")),
-            ),
-            DisplayLookup(
-                field="dest", title="Dest STP", on_click=GoToEvent(url=root_url("/stp/{dest_stp_subscription_id}/"))
-            ),
+            _linked("source", "/stp/{source_stp_subscription_id}/", "Source STP"),
+            _linked("dest", "/stp/{dest_stp_subscription_id}/", "Dest STP"),
             DisplayLookup(field="capacity"),
             DisplayLookup(field="reservation_state", title="Reservation"),
             DisplayLookup(field="provision_state", title="Provision"),
@@ -396,15 +396,50 @@ def button_row(buttons: list[c.Button]) -> c.Div:
     return c.Div(components=buttons, class_name="d-flex flex-row gap-1 py-3")
 
 
-def back_button(path: str) -> c.Div:
-    """Build the Back button every detail page opens with."""
-    return button_row([c.Button(text="Back", on_click=GoToEvent(url=root_url(path)), class_name="+ ms-2")])
+def _orchestrator_button(subscription_id: str | None) -> list[c.Button]:
+    """Open the subscription in the orchestrator UI, in a new tab; none without a subscription or UI URL."""
+    if not (subscription_id and settings.NSI_AMISS_WFO_UI_URL):
+        return []
+    url = f"{str(settings.NSI_AMISS_WFO_UI_URL).rstrip('/')}/subscriptions/{subscription_id}"
+    return [
+        c.Button(text="Open in orchestrator", on_click=GoToEvent(url=url, target="_blank"), named_style="secondary")
+    ]
 
 
-def detail_fields(model: type[BaseModel], exclude: Collection[str] = ()) -> list[DisplayLookup]:
+def detail_buttons(list_path: str, list_title: str, subscription_id: str | None = None) -> c.Div:
+    """Build the button row every detail page opens with.
+
+    Back follows the browser history, so it returns to whichever page linked here. It goes nowhere useful
+    on a page opened from a bookmark, hence the second button to the list.
+    """
+    return button_row(
+        [
+            c.Button(text="Back", on_click=BackEvent(), class_name="+ ms-2"),
+            c.Button(text=f"All {list_title}", on_click=GoToEvent(url=root_url(list_path)), named_style="secondary"),
+            *_orchestrator_button(subscription_id),
+        ]
+    )
+
+
+def _placeholders(path: str) -> set[str]:
+    """Return the field names a link path interpolates, e.g. ``{"stp_a_subscription_id"}``."""
+    return {name for _text, name, _spec, _conversion in Formatter().parse(path) if name}
+
+
+def detail_fields(
+    model: type[BaseModel], exclude: Collection[str] = (), links: Mapping[str, str] | None = None
+) -> list[DisplayLookup]:
     """Every field of a row model, for a detail page.
 
     Computed fields are not in ``model_fields``, so the list-only ones a table derives (``short_id``,
     ``network``/``port``) drop out for free; ``exclude`` is for stored fields the list shows instead.
+    ``links`` maps a field to the path it links to; the ids a path interpolates are link targets only, so
+    they are left out too.
     """
-    return [DisplayLookup(field=name) for name in model.model_fields if name not in exclude]
+    links = links or {}
+    targets = set().union(*map(_placeholders, links.values()))
+    return [
+        _linked(name, links[name]) if name in links else DisplayLookup(field=name)
+        for name, field in model.model_fields.items()
+        if name not in exclude and name not in targets and not field.exclude
+    ]

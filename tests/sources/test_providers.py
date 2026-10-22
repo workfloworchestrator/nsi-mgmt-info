@@ -29,9 +29,11 @@ from amiss.sources.providers import (
     build_providers,
     fetch_provider_reservations,
     fetch_providers,
+    link_providers,
     link_reservations,
     reservation_tab,
 )
+from amiss.sources.reconcile import NamedReconciliation, NamedRow, ReconcileStatus, StpReconciliation, StpRow
 from amiss.sources.wfo import CircuitRow, StpSub
 
 SUPA = "urn:ogf:network:surf.nl:2020:nsa:supa"
@@ -165,6 +167,43 @@ class TestBuildProviders:
     def test_aggregator_down_is_an_error(self):
         result = build_providers(None, [])
         assert result.rows == [] and "aggregator proxy" in result.error
+
+
+class TestLinkProviders:
+    PROVIDERS = build_providers([Upa(nsa_id=SUPA, network_ids=["urn:ogf:network:a", "urn:ogf:network:b"])], [])
+
+    @staticmethod
+    def _topology(object_id):
+        result = NamedReconciliation(rows=[NamedRow(object_id=object_id, status=ReconcileStatus.DDS_ONLY)])
+        return result, lambda row: row.object_id
+
+    @staticmethod
+    def _stp(stp_id):
+        result = StpReconciliation(rows=[StpRow(stp_id=stp_id, status=ReconcileStatus.DDS_ONLY)])
+        return result, lambda row: row.network
+
+    @pytest.mark.parametrize(
+        ("build", "raw_id", "expected"),
+        [
+            pytest.param(_topology, "urn:ogf:network:b", SUPA, id="topology-second-network"),
+            pytest.param(_topology, "a", SUPA, id="topology-no-urn-prefix"),
+            pytest.param(_topology, "urn:ogf:network:c", None, id="topology-no-peered-upa"),
+            pytest.param(_stp, "urn:ogf:network:a:port-1", SUPA, id="stp-in-a-served-network"),
+            pytest.param(_stp, "urn:ogf:network:c:port-1", None, id="stp-no-peered-upa"),
+        ],
+    )
+    def test_links_the_serving_provider(self, build, raw_id, expected):
+        result, network_of = build.__func__(raw_id)
+        [row] = link_providers(result, self.PROVIDERS, network_of).rows
+        assert row.provider_nsa == expected and row.provider_name == expected
+
+    def test_keeps_the_reconciliation_error(self):
+        result = link_providers(NamedReconciliation(error="down"), self.PROVIDERS, lambda row: row.object_id)
+        assert result.error == "down" and result.rows == []
+
+    def test_the_network_list_is_not_rendered(self):
+        """The list only serves matching; the page shows the joined ``network_ids``."""
+        assert "network_id_list" not in self.PROVIDERS.rows[0].model_dump()
 
 
 def _reservation(gri="urn:uuid:1", source="urn:ogf:network:x:port-a?vlan=100", dest=None):

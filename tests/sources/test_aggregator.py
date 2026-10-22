@@ -24,11 +24,14 @@ from amiss.sources.aggregator import (
     UNATTRIBUTED_ID,
     AggCircuit,
     PathSegment,
+    SpectrumView,
     build_spectrum,
     fetch_agg_circuits,
+    link_segments,
+    sdps_crossed,
     stp_label,
 )
-from amiss.sources.wfo import CircuitRow, SdpMember, SdpSub
+from amiss.sources.wfo import CircuitRow, SdpMember, SdpSub, StpSub
 
 
 def _wfo(connection_id, state="ACTIVATED", description=None, bandwidth=None):
@@ -116,6 +119,41 @@ def test_segment_display_fields_keep_the_raw_values():
     )
     assert (seg.source, seg.dest, seg.short_provider_nsa) == ("a:port (vlan 7)", "b:port", "a:nsa")
     assert seg.provider_nsa == "urn:ogf:network:a:nsa"
+
+
+@pytest.mark.parametrize(
+    ("stp", "expected"),
+    [
+        pytest.param("urn:ogf:network:dom:a?vlan=5", "stp-a", id="vlan-and-prefix-ignored"),
+        pytest.param("dom:a", "stp-a", id="bare"),
+        pytest.param("other:z", None, id="another-domain"),
+        pytest.param(None, None, id="no-stp"),
+    ],
+)
+def test_link_segments(stp, expected):
+    stps = [StpSub(subscription_id="stp-a", stp_id="urn:ogf:network:dom:a")]
+    [segment] = link_segments([PathSegment(source_stp=stp, dest_stp=stp)], stps)
+    assert (segment.source_stp_subscription_id, segment.dest_stp_subscription_id) == (expected, expected)
+
+
+def test_link_segments_without_stp_subscriptions_leaves_them_unlinked():
+    [segment] = link_segments([PathSegment(source_stp="dom:a")], None)
+    assert segment.source_stp_subscription_id is None
+
+
+class TestSdpsCrossed:
+    def test_lists_only_the_sdps_the_circuit_crosses(self):
+        view = build_spectrum(
+            [MOXY_SDP], [_agg("conn-1", AMS_NYC), _agg("conn-2", ORPHAN)], [_wfo("conn-1"), _wfo("conn-2")]
+        )
+        assert [row.subscription_id for row in sdps_crossed(view, "s-conn-1")] == ["d1"]
+
+    def test_the_unattributed_bucket_is_not_an_sdp(self):
+        view = build_spectrum([MOXY_SDP], [_agg("conn-2", ORPHAN)], [_wfo("conn-2")])
+        assert sdps_crossed(view, "s-conn-2") == []
+
+    def test_a_failed_spectrum_is_none(self):
+        assert sdps_crossed(SpectrumView(error="down"), "s-conn-1") is None
 
 
 class TestFetch:
