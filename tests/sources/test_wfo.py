@@ -312,9 +312,39 @@ class TestMapSdp:
         assert sdp.subscription_id == "sdp-1" and sdp.sdp_name == "A<->B"
         assert [m.stp_id for m in sdp.stps] == ["urn:ogf:network:port-a", "urn:ogf:network:port-b"]
 
+    def test_members_carry_their_stp_subscription(self):
+        members = [stp | {"ownerSubscriptionId": f"stp-{i}"} for i, stp in enumerate(SDP_SUBSCRIPTION["sdp"]["stps"])]
+        sdp = wfo._map_sdp(SDP_SUBSCRIPTION | {"sdp": SDP_SUBSCRIPTION["sdp"] | {"stps": members}})
+        assert [m.stp_subscription_id for m in sdp.stps] == ["stp-0", "stp-1"]
+
     def test_tolerates_missing_block(self):
         sdp = wfo._map_sdp({"subscriptionId": "sdp-x", "status": "initial"})
         assert sdp.stps == [] and sdp.sdp_name is None
+
+
+@pytest.mark.parametrize(
+    ("owner", "expected"),
+    [
+        pytest.param("stp-a", "stp-a", id="owner"),
+        pytest.param(None, None, id="no-owner"),
+    ],
+)
+def test_circuit_endpoints_carry_their_stp_subscription(owner, expected):
+    """A SAP reuses the STP subscription's block, so the block's owner is the STP to link to."""
+    saps = [{"vlan": "100", "stp": {"stpId": "urn:ogf:network:a", "ownerSubscriptionId": owner}}]
+    row = wfo._map_circuit({"subscriptionId": "c", "vc": {"saps": saps}})
+    assert (row.source_stp_subscription_id, row.dest_stp_subscription_id) == (expected, None)
+
+
+@pytest.mark.parametrize(
+    ("query", "selection"),
+    [
+        pytest.param(wfo.CIRCUITS_QUERY, "stp { ownerSubscriptionId", id="circuits"),
+        pytest.param(wfo.SDP_QUERY, "stps { ownerSubscriptionId", id="sdp"),
+    ],
+)
+def test_queries_ask_for_the_stp_owner(query, selection):
+    assert selection in query
 
 
 class TestFetch:

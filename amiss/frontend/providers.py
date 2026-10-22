@@ -24,7 +24,7 @@ from amiss.data import get_provider_detail, get_providers
 from amiss.frontend.util import (
     Tabs,
     app_page,
-    back_button,
+    detail_buttons,
     detail_fields,
     error_message,
     provider_reservation_table,
@@ -91,7 +91,7 @@ def provider_details(request: Request, nsa_id: str, tab: ReservationTab = "activ
     if detail.provider is None:
         return app_page(title=f"No provider with id {nsa_id}.")
     return app_page(
-        back_button("/providers"),
+        detail_buttons("/providers", "providers"),
         c.Details(data=detail.provider, fields=detail_fields(ProviderRow)),
         c.Heading(text="Reservations", level=4),
         tab_links(_reservation_tabs(nsa_id)),

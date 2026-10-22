@@ -20,22 +20,23 @@ from fastui import components as c
 from pydantic import BaseModel, Field
 from starlette.requests import Request
 
-from amiss.data import get_circuit_path, get_circuits
+from amiss.data import get_circuit_detail, get_circuits
 from amiss.frontend.util import (
     app_page,
-    back_button,
     circuit_table,
+    detail_buttons,
     detail_fields,
     error_message,
     root_url,
     segment_table,
     sort_form,
     sort_rows,
+    spectrum_sdp_table,
     tab_links,
     tab_path,
     token_from_request,
 )
-from amiss.sources.aggregator import PathSegment
+from amiss.sources.aggregator import PathSegment, SpectrumRow
 from amiss.sources.wfo import CircuitRow, circuit_state_bucket
 
 router = APIRouter()
@@ -122,6 +123,13 @@ def _path_section(path: list[PathSegment] | None) -> AnyComponent:
     return segment_table(path)
 
 
+def _sdps_section(sdps: list[SpectrumRow] | None) -> AnyComponent:
+    """Render the SDPs the circuit crosses, distinguishing 'could not work out' from 'none'."""
+    if sdps is None:
+        return error_message("SDPs unavailable: the aggregator proxy or WFO could not be reached.")
+    return spectrum_sdp_table(sdps) if sdps else c.Markdown(text="_This circuit crosses no known SDP._")
+
+
 def _failure_banner(circuit: CircuitRow) -> list[AnyComponent]:
     """Why a failed circuit failed, shown above its details; the field stays in the details either way."""
     if circuit_state_bucket(circuit.state) != "failed" or not circuit.last_error:
@@ -129,22 +137,30 @@ def _failure_banner(circuit: CircuitRow) -> list[AnyComponent]:
     return [c.Div(components=[c.Text(text=circuit.last_error)], class_name="+ alert alert-danger")]
 
 
+_CIRCUIT_LINKS = {
+    "source_stp": "/stp/{source_stp_subscription_id}/",
+    "dest_stp": "/stp/{dest_stp_subscription_id}/",
+}
+
+
 @router.get("/{subscription_id}/", response_model=FastUI, response_model_exclude_none=True)
 def circuit_details(request: Request, subscription_id: str) -> list[AnyComponent]:
-    """Display a single circuit (WFO), re-fetched live by subscription id, plus its aggregator path."""
-    result = get_circuits(token_from_request(request))
-    if result.error:
-        return app_page(error_message(result.error), title="Circuit")
-    circuit = next((row for row in result.rows if row.subscription_id == subscription_id), None)
+    """Display a single circuit (WFO), re-fetched live by subscription id, plus its path and the SDPs it crosses."""
+    detail = get_circuit_detail(token_from_request(request), subscription_id)
+    if detail.error:
+        return app_page(error_message(detail.error), title="Circuit")
+    circuit = detail.circuit
     if circuit is None:
         return app_page(title=f"No circuit with id {subscription_id}.")
-    path = get_circuit_path(circuit.connection_id) if circuit.connection_id else []
+    # the merged source/dest are list-only; the detail shows the raw stp/vlan fields instead
+    fields = detail_fields(CircuitRow, exclude={"source", "dest"}, links=_CIRCUIT_LINKS)
     return app_page(
-        back_button("/circuits"),
+        detail_buttons("/circuits", "circuits", subscription_id),
         *_failure_banner(circuit),
-        # the merged source/dest are list-only; the detail shows the raw stp/vlan fields instead
-        c.Details(data=circuit, fields=detail_fields(CircuitRow, exclude={"source", "dest"})),
+        c.Details(data=circuit, fields=fields),
         c.Heading(text="Path", level=4),
-        _path_section(path),
+        _path_section(detail.path),
+        c.Heading(text="SDPs crossed", level=4),
+        _sdps_section(detail.sdps),
         title=f"Circuit {circuit.description}",
     )

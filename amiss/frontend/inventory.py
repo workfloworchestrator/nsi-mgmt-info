@@ -14,11 +14,12 @@
 
 """The /topology and /switching-service reconciliation pages."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from enum import Enum
 
 from fastapi import APIRouter
 from fastui import AnyComponent, FastUI
+from fastui.components.display import DisplayLookup
 from pydantic import BaseModel, Field
 from starlette.requests import Request
 
@@ -28,6 +29,7 @@ from amiss.frontend.util import (
     error_message,
     in_tab,
     named_table,
+    provider_column,
     reconcile_tabs,
     root_url,
     sort_form,
@@ -50,9 +52,13 @@ class NamedSortForm(BaseModel):
 
 
 def _build_router(
-    base: str, title: str, id_title: str, get_rows: Callable[[str | None], NamedReconciliation]
+    base: str,
+    title: str,
+    id_title: str,
+    get_rows: Callable[[str | None], NamedReconciliation],
+    extra_columns: Sequence[DisplayLookup] = (),
 ) -> APIRouter:
-    """Build the four tab routes of one reconciliation page."""
+    """Build the four tab routes of one reconciliation page; ``extra_columns`` follow the Name column."""
     router = APIRouter()
     tabs = reconcile_tabs(base)
 
@@ -64,7 +70,7 @@ def _build_router(
         return app_page(
             tab_links(tabs),
             sort_form(NamedSortForm, root_url(tab_path(tabs, tab)), sort),
-            named_table(rows, id_title),
+            named_table(rows, id_title, extra_columns),
             title=title,
         )
 
@@ -88,7 +94,9 @@ def _build_router(
 
 
 # Called through the module, not bound here: _build_router captures its argument once. See CLAUDE.md.
-topology_router = _build_router("/topology", "Topologies", "Topology ID", lambda token: data.get_topologies(token))
+topology_router = _build_router(
+    "/topology", "Topologies", "Topology ID", lambda token: data.get_topologies(token), [provider_column]
+)
 switching_service_router = _build_router(
     "/switching-service",
     "Switching Services",

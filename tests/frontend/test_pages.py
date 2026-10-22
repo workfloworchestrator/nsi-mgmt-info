@@ -15,16 +15,16 @@
 """Render tests for the circuits/STP/SDP pages: FastUI must serialize the DTO tables (mocked data)."""
 
 from contextlib import ExitStack
-from itertools import chain
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from amiss import app
-from amiss.data import NOT_AUTHORIZED, CircuitList
+from amiss.data import NOT_AUTHORIZED, CircuitDetail, CircuitList, StpDetail
 from amiss.frontend.circuits import _in_tab
 from amiss.frontend.home import Tone, _stat_line
+from amiss.settings import settings
 from amiss.sources.aggregator import UNATTRIBUTED_ID, CircuitOnSdp, PathSegment, SpectrumRow, SpectrumView
 from amiss.sources.providers import ProviderDetail, ProviderList, ProviderReservationRow, ProviderRow
 from amiss.sources.reconcile import (
@@ -38,6 +38,8 @@ from amiss.sources.reconcile import (
     StpRow,
 )
 from amiss.sources.wfo import CircuitRow, StpSub, ValidationFailureRow, WfoUnauthorizedError
+from tests.fastui_tree import texts as _texts
+from tests.fastui_tree import walk as _walk
 
 client = TestClient(app)
 
@@ -131,16 +133,6 @@ def test_dashboard_shows_summary_cards():
     assert "Circuits" in response.text and "Activated" in response.text
     assert "Termination Points" in response.text and "backed by DDS" in response.text
     assert "Spectrum" in response.text and "SDPs in use" in response.text
-
-
-def _walk(node):
-    """Yield every component dict in a FastUI tree."""
-    match node:
-        case dict():
-            yield node
-            yield from chain.from_iterable(_walk(v) for v in node.values())
-        case list():
-            yield from chain.from_iterable(_walk(v) for v in node)
 
 
 def _circuit_card_headline(cards) -> str | None:
@@ -247,45 +239,68 @@ def test_circuit_tab_routes_render(path):
         assert client.get(path).status_code == 200
 
 
-@pytest.mark.parametrize("path", ["/api/circuits", "/api/circuits/sub-1/"], ids=["list", "detail"])
-def test_circuits_pages_render_the_reason_they_have_no_data(path):
+def test_circuits_list_renders_the_reason_it_has_no_data():
     with patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(error="refused")):
-        response = client.get(path)
+        response = client.get("/api/circuits")
     assert response.status_code == 200
     assert "refused" in response.text
 
 
-def test_circuit_detail_renders():
-    rows = [CircuitRow(subscription_id="sub-1", description="circuit one")]
+_CIRCUIT_DETAIL = "amiss.frontend.circuits.get_circuit_detail"
+
+
+def _circuit(**fields) -> CircuitDetail:
+    """A circuit detail for sub-1 with no path and no SDPs; ``path``/``sdps`` override those, the rest go to the row."""
+    sections = {"path": [], "sdps": []} | {key: fields.pop(key) for key in ("path", "sdps") if key in fields}
+    return CircuitDetail(circuit=CircuitRow(subscription_id="sub-1", **fields), **sections)
+
+
+def test_circuit_list_links_the_endpoints_to_their_stps():
+    rows = [CircuitRow(subscription_id="sub-1", source="Port A", source_stp_subscription_id="stp-a")]
     with patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)):
+        response = client.get("/api/circuits")
+    assert "/stp/{source_stp_subscription_id}/" in response.text and "/stp/{dest_stp_subscription_id}/" in response.text
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected"),
+    [
+        pytest.param(_circuit(description="circuit one"), "Circuit circuit one", id="renders"),
+        pytest.param(CircuitDetail(error="refused"), "refused", id="error"),
+        pytest.param(CircuitDetail(), "No circuit with id sub-1.", id="not-found"),
+        pytest.param(
+            _circuit(path=None), "Path unavailable: the aggregator proxy could not be reached.", id="path-unavailable"
+        ),
+        pytest.param(_circuit(), "_No path segments reported for this circuit._", id="no-path"),
+        pytest.param(
+            _circuit(sdps=None),
+            "SDPs unavailable: the aggregator proxy or WFO could not be reached.",
+            id="sdps-unavailable",
+        ),
+        pytest.param(_circuit(), "_This circuit crosses no known SDP._", id="no-sdps"),
+    ],
+)
+def test_circuit_detail_says_what_it_has(detail, expected):
+    with patch(_CIRCUIT_DETAIL, return_value=detail):
         response = client.get("/api/circuits/sub-1/")
     assert response.status_code == 200
-    assert "circuit one" in response.text
+    assert expected in _texts(response.json())
 
 
-def test_circuit_detail_shows_path_segments():
-    rows = [CircuitRow(subscription_id="sub-1", description="c", connection_id="conn-1")]
-    segments = [
-        PathSegment(order=0, provider_nsa="nsa-a", source_stp="a", dest_stp="b", capacity=1000, status="ACTIVATED")
-    ]
-    with (
-        patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)),
-        patch("amiss.frontend.circuits.get_circuit_path", return_value=segments),
-    ):
+def test_circuit_detail_links_path_stps_and_the_sdps_crossed():
+    detail = _circuit(
+        path=[PathSegment(order=0, provider_nsa="nsa-a", source_stp="a", source_stp_subscription_id="stp-a")],
+        sdps=[_SDP],
+        source_stp="Port A",
+        source_stp_subscription_id="stp-a",
+    )
+    with patch(_CIRCUIT_DETAIL, return_value=detail):
         response = client.get("/api/circuits/sub-1/")
-    assert response.status_code == 200
-    assert "Path" in response.text and "nsa-a" in response.text
-
-
-def test_circuit_detail_path_unavailable():
-    rows = [CircuitRow(subscription_id="sub-1", connection_id="conn-1")]
-    with (
-        patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)),
-        patch("amiss.frontend.circuits.get_circuit_path", return_value=None),
-    ):
-        response = client.get("/api/circuits/sub-1/")
-    assert response.status_code == 200
-    assert "Path unavailable" in response.text
+    page = response.text
+    assert "nsa-a" in page and "A<->B" in page
+    assert "/stp/{source_stp_subscription_id}/" in page and "/sdp/{subscription_id}/" in page
+    # the owner ids only serve as link targets, so the details list does not show them as fields
+    assert '"field":"source_stp_subscription_id"' not in page.replace(" ", "")
 
 
 @pytest.mark.parametrize(
@@ -297,20 +312,12 @@ def test_circuit_detail_path_unavailable():
     ],
 )
 def test_circuit_detail_last_error(state, last_error, banner):
-    rows = [CircuitRow(subscription_id="sub-1", state=state, last_error=last_error)]
-    with patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)):
+    with patch(_CIRCUIT_DETAIL, return_value=_circuit(state=state, last_error=last_error)):
         page = client.get("/api/circuits/sub-1/").json()
     alerts = [node for node in _walk(page) if "alert-danger" in str(node.get("className", ""))]
     assert bool(alerts) is banner
     assert last_error in _texts(alerts[0]) if banner else not alerts
     assert "last_error" in str(page)  # the field is always in the details list
-
-
-def test_circuit_detail_not_found():
-    with patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList()):
-        response = client.get("/api/circuits/does-not-exist/")
-    assert response.status_code == 200
-    assert "No circuit with id" in response.text
 
 
 def test_dashboard_circuit_card_unavailable_when_wfo_unreachable():
@@ -444,6 +451,15 @@ _SDP_ROWS = [
 ]
 
 
+def _stp_detail(**overrides) -> StpDetail:
+    """An STP detail holding _STP_ROWS and no related rows; overrides replace a section."""
+    sections = {"stps": StpReconciliation(rows=_STP_ROWS), "circuits": CircuitList(), "sdps": SdpReconciliation()}
+    return StpDetail(**(sections | overrides))
+
+
+_STP_DETAIL, _SDP_DETAIL = "amiss.frontend.stp.get_stp_detail", "amiss.frontend.sdp.get_sdp_detail"
+
+
 _STPS, _SDPS = "amiss.frontend.stp.get_stps", "amiss.frontend.sdp.get_sdps"
 _STP_RECONCILIATION = StpReconciliation(rows=_STP_ROWS)
 _SDP_RECONCILIATION = SdpReconciliation(rows=_SDP_ROWS)
@@ -530,7 +546,7 @@ def test_stp_detail_lists_only_the_circuits_on_that_stp():
             ),
         ]
     )
-    with patch("amiss.frontend.stp.get_stp_detail", return_value=(StpReconciliation(rows=_STP_ROWS), circuits)):
+    with patch(_STP_DETAIL, return_value=_stp_detail(circuits=circuits)):
         response = client.get("/api/stp/stp-1/")
     assert response.status_code == 200
     assert "ON-PORT-A" in response.text
@@ -538,14 +554,32 @@ def test_stp_detail_lists_only_the_circuits_on_that_stp():
     assert "OLD-ON-PORT-A" not in response.text  # right port, but terminated
 
 
-def test_stp_detail_says_why_the_circuits_are_missing():
-    """A failed circuits fetch must not read as 'no circuits use this port'."""
-    with patch(
-        "amiss.frontend.stp.get_stp_detail",
-        return_value=(StpReconciliation(rows=_STP_ROWS), CircuitList(error="WFO down")),
-    ):
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        # a failed fetch must not read as 'no circuits use this port'
+        pytest.param({"circuits": CircuitList(error="WFO down")}, "WFO down", id="circuits-unavailable"),
+        pytest.param({"sdps": SdpReconciliation(error="SDP data unavailable")}, "SDP data unavailable", id="sdps-down"),
+        pytest.param({}, "_This STP is not an end of any SDP._", id="no-sdps"),
+    ],
+)
+def test_stp_detail_degrades_per_section(overrides, expected):
+    with patch(_STP_DETAIL, return_value=_stp_detail(**overrides)):
         response = client.get("/api/stp/stp-1/")
-    assert response.status_code == 200 and "WFO down" in response.text
+    assert response.status_code == 200 and expected in _texts(response.json())
+
+
+def test_stp_detail_lists_the_sdps_on_that_stp_and_links_the_provider():
+    # stp-1 is dom:portA: sdp-1 has it as an end, the DDS-only SDP on dom:portB does not
+    linked = [_STP_ROWS[0].model_copy(update={"provider_nsa": _SUPA, "provider_name": "SURF uPA"})]
+    detail = _stp_detail(stps=StpReconciliation(rows=linked), sdps=SdpReconciliation(rows=_SDP_ROWS))
+    with patch(_STP_DETAIL, return_value=detail):
+        page = client.get("/api/stp/stp-1/").json()
+    sdps = next(n for n in _walk(page) if n.get("type") == "Table")
+    assert [row["subscription_id"] for row in sdps["data"]] == ["sdp-1"]
+    details = next(n for n in _walk(page) if n.get("type") == "Details")
+    assert details["data"]["provider_name"] == "SURF uPA"
+    assert "/providers/{provider_nsa}/" in str(details["fields"])
 
 
 def test_sdp_detail_shows_circuits_on_sdp():
@@ -558,21 +592,18 @@ def test_sdp_detail_shows_circuits_on_sdp():
     assert "/circuits/{subscription_id}/" in response.text
 
 
-_STP_DETAIL, _SDP_DETAIL = "amiss.frontend.stp.get_stp_detail", "amiss.frontend.sdp.get_sdp_detail"
-
-
 @pytest.mark.parametrize(
     ("target", "value", "path", "expected"),
     [
         pytest.param(
-            _STP_DETAIL, (StpReconciliation(rows=[]), CircuitList()), "/api/stp/nope/", "nope", id="stp-not-found"
+            _STP_DETAIL, _stp_detail(stps=StpReconciliation(rows=[])), "/api/stp/nope/", "nope", id="stp-not-found"
         ),
         pytest.param(
             _SDP_DETAIL, (SdpReconciliation(rows=[]), SpectrumView()), "/api/sdp/nope/", "nope", id="sdp-not-found"
         ),
         pytest.param(
             _STP_DETAIL,
-            (StpReconciliation(error="STP source down"), CircuitList()),
+            _stp_detail(stps=StpReconciliation(error="STP source down")),
             "/api/stp/stp-1/",
             "source down",
             id="stp-source-down",
@@ -590,11 +621,6 @@ def test_detail_page_says_why_it_has_no_row(target, value, path, expected):
     with patch(target, return_value=value):
         response = client.get(path)
     assert response.status_code == 200 and expected in response.text
-
-
-def _texts(tree) -> list[str]:
-    """Every rendered text string in a FastUI tree."""
-    return [text for node in _walk(tree) if isinstance(text := node.get("text"), str)]
 
 
 _FAILURE = ValidationFailureRow(
@@ -774,10 +800,92 @@ def test_provider_detail_degrades(detail, expected):
 
 
 def test_circuit_path_links_the_provider():
-    rows = [CircuitRow(subscription_id="sub-1", connection_id="conn-1")]
-    with (
-        patch("amiss.frontend.circuits.get_circuits", return_value=CircuitList(rows=rows)),
-        patch("amiss.frontend.circuits.get_circuit_path", return_value=[PathSegment(provider_nsa=_SUPA)]),
-    ):
+    detail = _circuit(path=[PathSegment(provider_nsa=_SUPA)])
+    with patch(_CIRCUIT_DETAIL, return_value=detail):
         response = client.get("/api/circuits/sub-1/")
     assert "/providers/{provider_nsa}/" in response.text
+
+
+# --- Navigation ---------------------------------------------------------------------------------------
+
+_ORCHESTRATOR_UI = "https://orchestrator.example"
+
+
+def _buttons(page) -> dict[str, dict]:
+    """The detail page's buttons by text, mapped to their click event."""
+    return {node["text"]: node["onClick"] for node in _walk(page) if node.get("type") == "Button"}
+
+
+@pytest.mark.parametrize(
+    ("target", "value", "path", "list_url", "orchestrator"),
+    [
+        pytest.param(_CIRCUIT_DETAIL, _circuit(), "/api/circuits/sub-1/", "/circuits", "sub-1", id="circuit"),
+        pytest.param(_STP_DETAIL, _stp_detail(), "/api/stp/stp-1/", "/stp", "stp-1", id="stp"),
+        pytest.param(
+            _SDP_DETAIL,
+            (SdpReconciliation(rows=_SDP_ROWS), SpectrumView()),
+            "/api/sdp/sdp-1/",
+            "/sdp",
+            "sdp-1",
+            id="sdp",
+        ),
+        pytest.param(
+            "amiss.frontend.providers.get_provider_detail",
+            ProviderDetail(provider=_PROVIDER, reservations=[]),
+            f"/api/providers/{_SUPA}/",
+            "/providers",
+            None,
+            id="provider-has-no-subscription",
+        ),
+    ],
+)
+def test_detail_page_buttons(monkeypatch, target, value, path, list_url, orchestrator):
+    """Back follows the history, so it returns to the page that linked here; the list button is the fallback."""
+    monkeypatch.setattr(settings, "NSI_AMISS_WFO_UI_URL", _ORCHESTRATOR_UI)
+    with patch(target, return_value=value):
+        buttons = _buttons(client.get(path).json())
+    assert buttons.pop("Back") == {"type": "back"}
+    assert next(event["url"] for text, event in buttons.items() if text.startswith("All ")) == list_url
+    expected = {"type": "go-to", "url": f"{_ORCHESTRATOR_UI}/subscriptions/{orchestrator}", "target": "_blank"}
+    assert buttons.get("Open in orchestrator") == (expected if orchestrator else None)
+
+
+def test_no_orchestrator_button_without_a_ui_url(monkeypatch):
+    monkeypatch.setattr(settings, "NSI_AMISS_WFO_UI_URL", None)
+    with patch(_CIRCUIT_DETAIL, return_value=_circuit()):
+        buttons = _buttons(client.get("/api/circuits/sub-1/").json())
+    assert set(buttons) == {"Back", "All circuits"}
+
+
+def test_sdp_list_and_detail_link_their_stps():
+    spectrum = SpectrumView(rows=[SpectrumRow(subscription_id="sdp-1")])
+    with (
+        patch("amiss.frontend.sdp.get_sdps", return_value=SdpReconciliation(rows=_SDP_ROWS)),
+        patch("amiss.frontend.sdp.get_sdp_detail", return_value=(SdpReconciliation(rows=_SDP_ROWS), spectrum)),
+    ):
+        pages = [client.get(path).text for path in ("/api/sdp", "/api/sdp/sdp-1/")]
+    assert all("/stp/{stp_a_subscription_id}/" in page and "/stp/{stp_z_subscription_id}/" in page for page in pages)
+
+
+def test_spectrum_links_the_sdp_ends():
+    with patch("amiss.frontend.spectrum.get_spectrum", return_value=SpectrumView(rows=[_SDP])):
+        response = client.get("/api/spectrum")
+    assert "/stp/{stp_a_subscription_id}/" in response.text
+
+
+def test_topology_list_links_the_provider():
+    rows = [
+        NamedRow(object_id="dom:topo", status=ReconcileStatus.DDS_ONLY, provider_nsa=_SUPA, provider_name="SURF uPA")
+    ]
+    with patch("amiss.data.get_topologies", return_value=NamedReconciliation(rows=rows)):
+        page = client.get("/api/topology").json()
+    table = next(n for n in _walk(page) if n.get("type") == "Table")
+    assert table["data"][0]["provider_name"] == "SURF uPA"
+    assert "/providers/{provider_nsa}/" in str(table["columns"])
+
+
+def test_switching_service_list_has_no_provider_column():
+    with patch("amiss.data.get_switching_services", return_value=NamedReconciliation(rows=[])):
+        page = client.get("/api/switching-service").json()
+    table = next(n for n in _walk(page) if n.get("type") == "Table")
+    assert "provider_name" not in str(table["columns"])

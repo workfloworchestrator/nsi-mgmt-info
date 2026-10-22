@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     # upstream WFO (workflow orchestrator) base URL; the GraphQL client appends /api/graphql
     NSI_AMISS_WFO_URL: HttpUrl = HttpUrl("http://orchestrator.domain.example")
 
+    # orchestrator UI base URL; detail pages link to <url>/subscriptions/<id> when set
+    NSI_AMISS_WFO_UI_URL: HttpUrl | None = None
+
     # Logging
     LOG_LEVEL: str = "INFO"
 

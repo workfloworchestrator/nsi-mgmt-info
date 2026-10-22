@@ -62,6 +62,8 @@ class StpRow(BaseModel):
     capacity: int | None = None
     wfo_status: str | None = None  # the subscription's own lifecycle, distinct from `status` below
     status: ReconcileStatus
+    provider_nsa: str | None = None  # set by get_stp_detail only, the one accessor that fetches the providers
+    provider_name: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -91,6 +93,8 @@ class SdpRow(BaseModel):
     # what the table shows for each end: the port's name, falling back to its id where the WFO has none
     stp_a_name: str | None = None
     stp_z_name: str | None = None
+    stp_a_subscription_id: str | None = None
+    stp_z_subscription_id: str | None = None
     description: str | None = None
     vlan_range: str | None = None
     capacity: int | None = None
@@ -118,6 +122,8 @@ class NamedRow(BaseModel):
     description: str | None = None
     wfo_status: str | None = None
     status: ReconcileStatus
+    provider_nsa: str | None = None  # the uPA serving this network, where the aggregator peers with one
+    provider_name: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -160,6 +166,17 @@ def normalize_id(raw: str | None) -> str | None:
 def by_normalized_id[T](items: Iterable[T], id_of: Callable[[T], str | None]) -> dict[str, T]:
     """Index items by their normalised STP id, dropping those without one (last wins on collision)."""
     return {nid: item for item in items if (nid := normalize_id(id_of(item)))}
+
+
+def stp_subscriptions(stp_subs: list[StpSub] | None) -> Callable[[str | None], str | None]:
+    """Build a lookup from an STP id, with or without URN prefix and ``?vlan=``, to its STP subscription."""
+    by_id = by_normalized_id(stp_subs or [], lambda sub: sub.stp_id)
+
+    def subscription_of(stp: str | None) -> str | None:
+        sub = by_id.get(normalize_id(stp) or "")
+        return sub.subscription_id if sub else None
+
+    return subscription_of
 
 
 def _status(in_wfo: bool, in_dds: bool) -> ReconcileStatus:
@@ -247,6 +264,11 @@ def end_label(end: SdpMember | None, stp_id: str) -> str:
     return (end.stp_name if end else None) or strip_urn(stp_id)
 
 
+def end_subscription(end: SdpMember | None) -> str | None:
+    """Return the STP subscription one end of an SDP links to, if the WFO has one."""
+    return end.stp_subscription_id if end else None
+
+
 def _shared(a: str | None, z: str | None) -> str | None:
     """Render a value the SDP's two ends should share: one value when they agree, both when they do not.
 
@@ -269,6 +291,8 @@ def _sdp_row(
         stp_z_id=stp_z,
         stp_a_name=end_label(end_a, stp_a),
         stp_z_name=end_label(end_z, stp_z),
+        stp_a_subscription_id=end_subscription(end_a),
+        stp_z_subscription_id=end_subscription(end_z),
         description=wfo.sdp_name if wfo else None,
         vlan_range=_shared(end_a.label_group if end_a else None, end_z.label_group if end_z else None),
         # Unlike the VLAN range, capacity stays a number so the column sorts and /spectrum can divide by it.

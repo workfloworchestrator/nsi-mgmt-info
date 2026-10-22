@@ -20,13 +20,15 @@ adds each NSA's name, roles and peers (``dds_topology.fetch_dds_nsas``). Fetches
 failure so callers can tell "failed" from "empty".
 """
 
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import quote
 
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, Field, computed_field
 
 from amiss.dds import strip_urn
 from amiss.sources.aggregator import get_agg_proxy_list, stp_label
-from amiss.sources.reconcile import by_normalized_id, normalize_id
+from amiss.sources.reconcile import NamedReconciliation, StpReconciliation, normalize_id, stp_subscriptions
 from amiss.sources.wfo import CircuitRow, StpSub, short_id
 
 PROVIDERS_UNAVAILABLE = "Providers unavailable: the aggregator proxy could not be reached."
@@ -72,6 +74,7 @@ class ProviderRow(BaseModel):
     network_ids: str | None = None
     roles: str | None = None
     peers_with: str | None = None
+    network_id_list: list[str] = Field(default=[], exclude=True)  # what link_providers matches; never rendered
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -179,6 +182,7 @@ def _provider_row(upa: Upa, nsa: DdsNsa | None) -> ProviderRow:
         network_ids=_join(upa.network_ids),
         roles=_join(nsa.roles) if nsa else None,
         peers_with=_join(nsa.peers_with) if nsa else None,
+        network_id_list=upa.network_ids,
     )
 
 
@@ -193,6 +197,22 @@ def build_providers(upas: list[Upa] | None, nsas: list[DdsNsa] | None) -> Provid
     nsa_by_id = {nsa.nsa_id: nsa for nsa in nsas or []}
     rows = [_provider_row(upa, nsa_by_id.get(upa.nsa_id)) for upa in upas]
     return ProviderList(rows=sorted(rows, key=lambda row: row.name.lower()))
+
+
+def link_providers[R: (NamedReconciliation, StpReconciliation)](
+    result: R, providers: ProviderList, network_of: Callable[[Any], str | None]
+) -> R:
+    """Attach the uPA serving each row's network.
+
+    A row no peered uPA serves stays unlinked, as does every row when the providers could not be fetched.
+    """
+    by_network = {nid: row for row in providers.rows for raw in row.network_id_list if (nid := normalize_id(raw))}
+
+    def fields(row: Any) -> dict[str, str]:
+        provider = by_network.get(normalize_id(network_of(row)) or "")
+        return {"provider_nsa": provider.nsa_id, "provider_name": provider.name} if provider else {}
+
+    return result.model_copy(update={"rows": [row.model_copy(update=fields(row)) for row in result.rows]})
 
 
 def link_reservations(
@@ -212,12 +232,7 @@ def link_reservations(
         for circuit in wfo_circuits or []
         if circuit.global_reservation_id
     }
-    stp_by_id = by_normalized_id(stp_subs or [], lambda sub: sub.stp_id)
-
-    def stp_subscription(stp: str | None) -> str | None:
-        sub = stp_by_id.get(normalize_id(stp) or "")
-        return sub.subscription_id if sub else None
-
+    stp_subscription = stp_subscriptions(stp_subs)
     return [
         ProviderReservationRow(
             **reservation.model_dump(),

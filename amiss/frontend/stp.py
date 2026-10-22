@@ -23,13 +23,14 @@ from starlette.requests import Request
 from amiss.data import CircuitList, get_stp_detail, get_stps
 from amiss.frontend.util import (
     app_page,
-    back_button,
     circuit_table,
+    detail_buttons,
     detail_fields,
     error_message,
     in_tab,
     reconcile_tabs,
     root_url,
+    sdp_table,
     sort_form,
     sort_rows,
     stp_table,
@@ -37,7 +38,7 @@ from amiss.frontend.util import (
     tab_path,
     token_from_request,
 )
-from amiss.sources.reconcile import StpRow, normalize_id
+from amiss.sources.reconcile import SdpReconciliation, StpRow, normalize_id
 from amiss.sources.wfo import CircuitRow, is_terminated
 
 router = APIRouter()
@@ -121,19 +122,31 @@ def _circuits_section(circuits: CircuitList, row: StpRow) -> AnyComponent:
     return circuit_table(on_stp) if on_stp else c.Markdown(text="_No circuits currently use this STP._")
 
 
+def _sdps_section(sdps: SdpReconciliation, row: StpRow) -> AnyComponent:
+    """Render the SDPs this STP is an end of, distinguishing 'could not fetch' from 'none'."""
+    if sdps.error:
+        return error_message(sdps.error)
+    target = normalize_id(row.stp_id)
+    on_stp = [sdp for sdp in sdps.rows if target in {normalize_id(sdp.stp_a_id), normalize_id(sdp.stp_z_id)}]
+    return sdp_table(on_stp) if on_stp else c.Markdown(text="_This STP is not an end of any SDP._")
+
+
 @router.get("/{subscription_id}/", response_model=FastUI, response_model_exclude_none=True)
 def stp_details(request: Request, subscription_id: str) -> list[AnyComponent]:
-    """Display a single STP subscription and the circuits terminating on it."""
-    stps, circuits = get_stp_detail(token_from_request(request))
-    if stps.error:
-        return app_page(error_message(stps.error), title="Service Termination Point")
-    row = next((r for r in stps.rows if r.subscription_id == subscription_id), None)
+    """Display a single STP subscription, its provider, and the circuits and SDPs using it."""
+    detail = get_stp_detail(token_from_request(request))
+    if detail.stps.error:
+        return app_page(error_message(detail.stps.error), title="Service Termination Point")
+    row = next((r for r in detail.stps.rows if r.subscription_id == subscription_id), None)
     if row is None:
         return app_page(title=f"No STP with id {subscription_id}.")
+    fields = detail_fields(StpRow, links={"provider_name": "/providers/{provider_nsa}/"})
     return app_page(
-        back_button("/stp"),
-        c.Details(data=row, fields=detail_fields(StpRow)),
+        detail_buttons("/stp", "STPs", subscription_id),
+        c.Details(data=row, fields=fields),
         c.Heading(text="Circuits on this STP", level=4),
-        _circuits_section(circuits, row),
+        _circuits_section(detail.circuits, row),
+        c.Heading(text="SDPs on this STP", level=4),
+        _sdps_section(detail.sdps, row),
         title=f"STP {row.stp_id}",
     )
