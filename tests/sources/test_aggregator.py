@@ -20,7 +20,14 @@ from unittest.mock import patch
 import pytest
 
 from amiss.sources import aggregator as agg
-from amiss.sources.aggregator import UNATTRIBUTED_ID, AggCircuit, PathSegment, build_spectrum, fetch_agg_circuits
+from amiss.sources.aggregator import (
+    UNATTRIBUTED_ID,
+    AggCircuit,
+    PathSegment,
+    build_spectrum,
+    fetch_agg_circuits,
+    stp_label,
+)
 from amiss.sources.wfo import CircuitRow, SdpMember, SdpSub
 
 
@@ -85,6 +92,30 @@ ORPHAN = {
         {"order": 1, "sourceSTP": "b.edu:2025:portEdge?vlan=7", "destSTP": "b.edu:2025:portY"},
     ],
 }
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        pytest.param("urn:ogf:network:dom:2025:port?vlan=100", "dom:2025:port (vlan 100)", id="prefix-and-vlan"),
+        pytest.param("urn:ogf:network:dom:2025:port", "dom:2025:port", id="prefix-only"),
+        pytest.param("dom:2025:port?vlan=100", "dom:2025:port (vlan 100)", id="vlan-only"),
+        pytest.param(None, None, id="no-stp"),
+    ],
+)
+def test_stp_label(raw, expected):
+    assert stp_label(raw) == expected
+
+
+def test_segment_display_fields_keep_the_raw_values():
+    """The table shows the short forms; the raw NSA id is what the provider link interpolates."""
+    seg = PathSegment(
+        source_stp="urn:ogf:network:a:port?vlan=7",
+        dest_stp="urn:ogf:network:b:port",
+        provider_nsa="urn:ogf:network:a:nsa",
+    )
+    assert (seg.source, seg.dest, seg.short_provider_nsa) == ("a:port (vlan 7)", "b:port", "a:nsa")
+    assert seg.provider_nsa == "urn:ogf:network:a:nsa"
 
 
 class TestFetch:

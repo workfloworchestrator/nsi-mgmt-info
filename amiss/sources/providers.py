@@ -25,7 +25,7 @@ from urllib.parse import quote
 from pydantic import BaseModel, computed_field
 
 from amiss.dds import strip_urn
-from amiss.sources.aggregator import get_agg_proxy_list
+from amiss.sources.aggregator import get_agg_proxy_list, stp_label
 from amiss.sources.reconcile import by_normalized_id, normalize_id
 from amiss.sources.wfo import CircuitRow, StpSub, short_id
 
@@ -82,7 +82,7 @@ class ProviderRow(BaseModel):
     @property
     def networks(self) -> str | None:
         """The network ids without their URN prefix, for the list."""
-        return strip_urn(self.network_ids) if self.network_ids else None
+        return strip_urn(self.network_ids)
 
 
 class ProviderReservationRow(UpaReservation):
@@ -96,6 +96,16 @@ class ProviderReservationRow(UpaReservation):
     @property
     def short_id(self) -> str | None:
         return short_id(self.subscription_id)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def source(self) -> str | None:
+        return stp_label(self.source_stp)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def dest(self) -> str | None:
+        return stp_label(self.dest_stp)
 
 
 class ProviderList(BaseModel):

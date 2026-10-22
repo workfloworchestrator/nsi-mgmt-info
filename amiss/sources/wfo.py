@@ -28,6 +28,7 @@ import requests
 import structlog
 from pydantic import BaseModel, computed_field
 
+from amiss.dds import strip_urn
 from amiss.nsi import REQUEST_TIMEOUT, session
 from amiss.settings import settings
 
@@ -337,11 +338,11 @@ def _endpoint(saps: list[dict], index: int) -> tuple[str | None, str | None, str
     return (stp.get("stpName") or stp.get("stpId")), stp.get("stpId"), sap.get("vlan")
 
 
-def _endpoint_label(stp: str | None, vlan: str | None) -> str | None:
+def endpoint_label(stp: str | None, vlan: str | None) -> str | None:
     """Combine an endpoint's STP and VLAN into one compact cell, e.g. 'Port A (vlan 100)'."""
     if not stp:
         return None
-    return f"{stp} (vlan {vlan})" if vlan else stp
+    return f"{strip_urn(stp)} (vlan {vlan})" if vlan else strip_urn(stp)
 
 
 def _format_ts(value: str | None) -> str | None:
@@ -372,8 +373,8 @@ def _map_circuit(sub: dict) -> CircuitRow:
         dest_stp=dest_stp,
         dest_stp_id=dest_stp_id,
         dest_vlan=dest_vlan,
-        source=_endpoint_label(source_stp, source_vlan),
-        dest=_endpoint_label(dest_stp, dest_vlan),
+        source=endpoint_label(source_stp, source_vlan),
+        dest=endpoint_label(dest_stp, dest_vlan),
         bandwidth=vc.get("serviceSpeed"),
         state=vc.get("state") or sub.get("status"),
         created_by=_created_by(sub),

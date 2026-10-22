@@ -27,10 +27,11 @@ from collections.abc import Iterator
 import structlog
 from pydantic import BaseModel, HttpUrl, computed_field
 
+from amiss.dds import strip_urn
 from amiss.nsi import nsi_util_get_json
 from amiss.settings import settings
 from amiss.sources.reconcile import end_label, normalize_id, sdp_capacity, sdp_ends, sdp_pair
-from amiss.sources.wfo import CircuitRow, SdpSub, is_terminated, short_id
+from amiss.sources.wfo import CircuitRow, SdpSub, endpoint_label, is_terminated, short_id
 
 logger = structlog.get_logger(__name__)
 
@@ -44,6 +45,21 @@ class PathSegment(BaseModel):
     capacity: int | None = None
     provider_nsa: str | None = None
     status: str | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def source(self) -> str | None:
+        return stp_label(self.source_stp)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def dest(self) -> str | None:
+        return stp_label(self.dest_stp)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def short_provider_nsa(self) -> str | None:
+        return strip_urn(self.provider_nsa)
 
 
 class AggCircuit(BaseModel):
@@ -118,6 +134,11 @@ def _vlan_of(raw: str | None) -> str | None:
     query = raw.split("?", 1)[1]
     params = dict(param.split("=", 1) for param in query.split("&") if "=" in param)
     return params.get("vlan")
+
+
+def stp_label(raw: str | None) -> str | None:
+    """Render an STP URN for a table cell: no URN prefix, and ``?vlan=N`` as ``(vlan N)``."""
+    return endpoint_label(raw.partition("?")[0], _vlan_of(raw)) if raw else None
 
 
 def _map_segment(seg: dict) -> PathSegment:

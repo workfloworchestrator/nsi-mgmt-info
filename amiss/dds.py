@@ -14,13 +14,22 @@
 
 """DDS-proxy topology fetch helpers, reused by amiss/sources/dds_topology.py."""
 
+from typing import overload
+
 from pydantic import HttpUrl
 
 from amiss.nsi import nsi_util_get_json
 
+URN_PREFIX = "urn:ogf:network:"
 
-def strip_urn(urn: str) -> str:
-    return urn.replace("urn:ogf:network:", "")
+
+@overload
+def strip_urn(urn: str) -> str: ...
+@overload
+def strip_urn(urn: str | None) -> str | None: ...
+def strip_urn(urn: str | None) -> str | None:
+    """Drop every URN prefix (also inside a joined list), for a table cell."""
+    return urn.replace(URN_PREFIX, "") if urn else urn
 
 
 def get_dds_proxy_list(proxy_url: HttpUrl, path: str) -> bytes | None:

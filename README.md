@@ -62,6 +62,9 @@ AMISS is **read-only**: it surfaces and visualizes information sourced live from
 - **Providers** (`/providers`): the uPAs the aggregator peers with (aggregator proxy `GET /providers`), named and described from their DDS NSA documents (DDS proxy `GET /network-service-agents`). The detail page lists every reservation the uPA holds, whoever requested it, queried live from the uPA through the aggregator proxy (`GET /providers/{nsaId}/reservations`), with its raw NSI reservation, provision and lifecycle states and data-plane status. Tabbed by lifecycle (**Active / Terminated / All**; failed and expired reservations show under All only). A reservation links to its WFO circuit by **global reservation id** (the orchestrator sets one per circuit and the aggregator passes it to every uPA), and its STPs link to their `/stp` pages. NSI makes that id optional, so reservations without one, from other requesters, or left behind by a retried circuit (which gets a new id) are left unlinked. The circuit detail's path links each segment's provider NSA here.
 - **Health** (`/healthcheck`): a liveness/readiness probe returning JSON.
 
+Tables drop the `urn:ogf:network:` prefix that every NSI id shares, and show an STP's `?vlan=N` as
+`(vlan N)`. Detail pages show the full id.
+
 ## Performance
 
 Every page fetches live per request (no cache). A page's accessor issues one or more upstream calls —

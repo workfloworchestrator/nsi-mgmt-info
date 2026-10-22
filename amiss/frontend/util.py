@@ -238,7 +238,7 @@ def named_table(rows: list[NamedRow], id_title: str) -> c.Table:
         data=rows,
         columns=[
             DisplayLookup(field="short_id", title="ID"),
-            DisplayLookup(field="object_id", title=id_title),
+            DisplayLookup(field="short_object_id", title=id_title),
             DisplayLookup(field="description", title="Name"),
             DisplayLookup(field="wfo_status", title="Lifecycle"),
             DisplayLookup(field="status"),
@@ -338,9 +338,13 @@ def segment_table(segments: list[PathSegment]) -> c.Table:
         data=segments,
         columns=[
             DisplayLookup(field="order"),
-            DisplayLookup(field="provider_nsa", on_click=GoToEvent(url=root_url("/providers/{provider_nsa}/"))),
-            DisplayLookup(field="source_stp"),
-            DisplayLookup(field="dest_stp"),
+            DisplayLookup(
+                field="short_provider_nsa",
+                title="Provider NSA",
+                on_click=GoToEvent(url=root_url("/providers/{provider_nsa}/")),
+            ),
+            DisplayLookup(field="source", title="Source STP"),
+            DisplayLookup(field="dest", title="Dest STP"),
             DisplayLookup(field="capacity"),
             DisplayLookup(field="status"),
         ],
@@ -369,8 +373,14 @@ def provider_reservation_table(rows: list[ProviderReservationRow]) -> c.Table:
         columns=[
             _id_column("/circuits/{subscription_id}/", title="Circuit"),
             DisplayLookup(field="connection_id"),
-            DisplayLookup(field="source_stp", on_click=GoToEvent(url=root_url("/stp/{source_stp_subscription_id}/"))),
-            DisplayLookup(field="dest_stp", on_click=GoToEvent(url=root_url("/stp/{dest_stp_subscription_id}/"))),
+            DisplayLookup(
+                field="source",
+                title="Source STP",
+                on_click=GoToEvent(url=root_url("/stp/{source_stp_subscription_id}/")),
+            ),
+            DisplayLookup(
+                field="dest", title="Dest STP", on_click=GoToEvent(url=root_url("/stp/{dest_stp_subscription_id}/"))
+            ),
             DisplayLookup(field="capacity"),
             DisplayLookup(field="reservation_state", title="Reservation"),
             DisplayLookup(field="provision_state", title="Provision"),

@@ -25,6 +25,7 @@ from enum import Enum
 
 from pydantic import BaseModel, computed_field
 
+from amiss.dds import URN_PREFIX, strip_urn
 from amiss.sources.wfo import NamedSub, SdpMember, SdpSub, StpSub, short_id
 
 
@@ -71,8 +72,8 @@ class StpRow(BaseModel):
     @property
     def network(self) -> str | None:
         """The topology part of the STP id, split off because it repeats identically down the table."""
-        # ponytail: split on the last colon; parse the URN properly if a local id ever contains one
-        return (self.stp_id.rpartition(":")[0] or None) if self.stp_id else None
+        # Split on the last colon; parse the URN properly if a local id ever contains one.
+        return (strip_urn(self.stp_id.rpartition(":")[0]) or None) if self.stp_id else None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -123,6 +124,11 @@ class NamedRow(BaseModel):
     def short_id(self) -> str | None:
         return short_id(self.subscription_id)
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def short_object_id(self) -> str | None:
+        return strip_urn(self.object_id)
+
 
 class NamedReconciliation(BaseModel):
     rows: list[NamedRow] = []
@@ -147,7 +153,7 @@ def normalize_id(raw: str | None) -> str | None:
     """
     if not raw:
         return None
-    normalized = raw.strip().removeprefix("urn:ogf:network:").split("?", 1)[0]
+    normalized = raw.strip().removeprefix(URN_PREFIX).split("?", 1)[0]
     return normalized or None
 
 
@@ -237,8 +243,8 @@ def sdp_ends(wfo: SdpSub | None, stp_a: str, stp_z: str) -> tuple[SdpMember | No
 
 
 def end_label(end: SdpMember | None, stp_id: str) -> str:
-    """Label one end of an SDP: its port name, falling back to the id where the WFO has no name."""
-    return (end.stp_name if end else None) or stp_id
+    """Label one end of an SDP: its port name, falling back to the unprefixed id where the WFO has no name."""
+    return (end.stp_name if end else None) or strip_urn(stp_id)
 
 
 def _shared(a: str | None, z: str | None) -> str | None:

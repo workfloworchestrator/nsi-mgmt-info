@@ -39,7 +39,7 @@ SDP_JSON = json.dumps(
 def test_fetch_dds_stps_parses_and_skips_malformed():
     with patch.object(dds_topology, "get_dds_proxy_stps", return_value=STP_JSON):
         stps = dds_topology.fetch_dds_stps()
-    assert [s.stp_id for s in stps] == ["dom:portA"]
+    assert [s.stp_id for s in stps] == ["urn:ogf:network:dom:portA"]
     assert stps[0].vlan_range == "1-10" and stps[0].description == "Port A"
 
 
@@ -47,7 +47,7 @@ def test_fetch_dds_sdps_parses_and_skips_incomplete():
     with patch.object(dds_topology, "get_dds_proxy_sdps", return_value=SDP_JSON):
         sdps = dds_topology.fetch_dds_sdps()
     assert len(sdps) == 1
-    assert sdps[0].stp_a_id == "dom:portA" and sdps[0].stp_z_id == "dom:portB"
+    assert (sdps[0].stp_a_id, sdps[0].stp_z_id) == ("urn:ogf:network:dom:portA", "urn:ogf:network:dom:portB")
 
 
 @pytest.mark.parametrize("raw", [None, b"<html>", b"{}"], ids=["fetch-failed", "bad-json", "not-a-list"])
