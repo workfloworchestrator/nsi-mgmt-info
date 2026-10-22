@@ -29,7 +29,6 @@ from amiss.dds import (
     get_dds_proxy_stps,
     get_dds_proxy_switching_services,
     get_dds_proxy_topologies,
-    strip_urn,
 )
 from amiss.settings import settings
 from amiss.sources.providers import DdsNsa
@@ -55,21 +54,17 @@ def _parse_list(raw: bytes | None, what: str) -> list | None:
 
 def _to_dds_stp(item: dict) -> DdsStp | None:
     stp_id = item.get("id")
-    return (
-        DdsStp(stp_id=strip_urn(stp_id), vlan_range=item.get("labelGroup"), description=item.get("name"))
-        if stp_id
-        else None
-    )
+    return DdsStp(stp_id=stp_id, vlan_range=item.get("labelGroup"), description=item.get("name")) if stp_id else None
 
 
 def _to_dds_sdp(item: dict) -> DdsSdp | None:
     stp_a, stp_z = item.get("stpAId"), item.get("stpZId")
-    return DdsSdp(stp_a_id=strip_urn(stp_a), stp_z_id=strip_urn(stp_z)) if stp_a and stp_z else None
+    return DdsSdp(stp_a_id=stp_a, stp_z_id=stp_z) if stp_a and stp_z else None
 
 
 def _to_dds_named(item: dict) -> DdsNamed | None:
     object_id = item.get("id")
-    return DdsNamed(object_id=strip_urn(object_id), name=item.get("name")) if object_id else None
+    return DdsNamed(object_id=object_id, name=item.get("name")) if object_id else None
 
 
 def _fetch_named(raw: bytes | None, what: str) -> list[DdsNamed] | None:

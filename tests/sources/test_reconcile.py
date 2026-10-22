@@ -20,6 +20,7 @@ from amiss.sources.reconcile import (
     DdsNamed,
     DdsSdp,
     DdsStp,
+    NamedRow,
     ReconcileStatus,
     StpRow,
     normalize_id,
@@ -82,6 +83,12 @@ class TestReconcileStps:
         ("stp_id", "network", "port"),
         [
             pytest.param("dom.example.net:2024:topo:portA", "dom.example.net:2024:topo", "portA", id="urn-style-id"),
+            pytest.param(
+                "urn:ogf:network:dom.example.net:2024:topo:portA",
+                "dom.example.net:2024:topo",
+                "portA",
+                id="urn-prefix-dropped",
+            ),
             pytest.param("portA", None, "portA", id="no-topology-prefix"),
             pytest.param(None, None, None, id="no-id"),
         ],
@@ -158,18 +165,19 @@ class TestReconcileSdps:
         ("stp_name", "expected"),
         [
             pytest.param("NetherLight to DFN 2", "NetherLight to DFN 2", id="name-when-the-wfo-has-one"),
-            pytest.param(None, "dom:portA", id="falls-back-to-the-id"),
+            pytest.param(None, "dom:portA", id="falls-back-to-the-unprefixed-id"),
         ],
     )
     def test_ends_are_shown_by_name(self, stp_name, expected):
-        """The table shows each end by name; the id stays on the row for the detail page."""
+        """The table shows each end by name; the full id stays on the row for the detail page."""
+        port_a, port_b = "urn:ogf:network:dom:portA", "urn:ogf:network:dom:portB"
         wfo = SdpSub(
             subscription_id="sdp-1",
-            stps=[SdpMember(stp_id="dom:portA", stp_name=stp_name), SdpMember(stp_id="dom:portB")],
+            stps=[SdpMember(stp_id=port_a, stp_name=stp_name), SdpMember(stp_id=port_b)],
         )
-        row = reconcile_sdps([wfo], [DdsSdp(stp_a_id="dom:portA", stp_z_id="dom:portB")]).rows[0]
+        row = reconcile_sdps([wfo], [DdsSdp(stp_a_id=port_a, stp_z_id=port_b)]).rows[0]
         assert row.stp_a_name == expected
-        assert row.stp_a_id == "dom:portA"
+        assert row.stp_a_id == port_a
 
     @pytest.mark.parametrize(
         ("label_a", "label_z", "expected"),
@@ -278,3 +286,15 @@ class TestReconcileNamed:
     def test_rows_are_sorted_by_id(self):
         dds = [DdsNamed(object_id=oid) for oid in ("c", "a", "b")]
         assert [row.object_id for row in reconcile_named([], dds, "Topology").rows] == ["a", "b", "c"]
+
+    @pytest.mark.parametrize(
+        ("object_id", "expected"),
+        [
+            pytest.param("urn:ogf:network:dom:2024:topo", "dom:2024:topo", id="prefix-dropped"),
+            pytest.param("dom:2024:topo", "dom:2024:topo", id="no-prefix"),
+            pytest.param(None, None, id="no-id"),
+        ],
+    )
+    def test_short_object_id_drops_the_urn_prefix(self, object_id, expected):
+        row = NamedRow(object_id=object_id, status=ReconcileStatus.DDS_ONLY)
+        assert (row.short_object_id, row.object_id) == (expected, object_id)

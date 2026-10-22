@@ -117,7 +117,7 @@ class TestMapCircuit:
                     "source_vlan": "300",
                     "dest_stp": None,  # only one SAP
                     "dest_vlan": None,
-                    "source": "urn:ogf:network:a (vlan 300)",
+                    "source": "a (vlan 300)",  # the list cell drops the URN prefix
                     "dest": None,  # only one SAP -> no destination label
                     "created_by": "bob",  # no completed CREATE -> first CREATE
                 },

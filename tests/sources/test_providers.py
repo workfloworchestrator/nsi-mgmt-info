@@ -210,6 +210,11 @@ class TestLinkReservations:
         [row] = link_reservations([_reservation(source=source, dest=source)], WFO, STPS)
         assert row.source_stp_subscription_id == expected and row.dest_stp_subscription_id == expected
 
+    def test_stps_are_shortened_for_the_table(self):
+        [row] = link_reservations([_reservation(dest="urn:ogf:network:x:port-b")], WFO, STPS)
+        assert (row.source, row.dest) == ("x:port-a (vlan 100)", "x:port-b")
+        assert row.source_stp == "urn:ogf:network:x:port-a?vlan=100"
+
     def test_wfo_down_leaves_links_empty(self):
         [row] = link_reservations([_reservation()], None, None)
         assert (row.connection_id, row.subscription_id, row.source_stp_subscription_id) == ("child-1", None, None)
