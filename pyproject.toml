@@ -8,10 +8,10 @@ build-backend = "setuptools.build_meta"
 name = "nsi-mgmt-info"
 dynamic = ["version"]
 dependencies = [
-    "fastapi[standard]==0.150.0",
+    "fastapi[standard]==0.156.4",
     "fastui==0.9.0",
     "pydantic==2.14.1",
-    "pydantic-settings==2.16.0",
+    "pydantic-settings==2.16.1",
     "requests==2.34.2",
     "structlog==26.1.0",
 ]
