@@ -10,7 +10,7 @@ dynamic = ["version"]
 dependencies = [
     "fastapi[standard]==0.165.0",
     "fastui==0.9.0",
-    "pydantic==2.14.3",
+    "pydantic==2.14.4",
     "pydantic-settings==2.16.3",
     "requests==2.34.2",
     "structlog==26.1.0",
@@ -46,7 +46,7 @@ include = ["amiss*"]
 [dependency-groups]
 dev = [
     "mypy==2.4.1",
-    "ruff==0.17.5",
+    "ruff==0.17.6",
     "types-requests==2.33.0.20261030",
     "pytest==9.2.0",
     "pytest-asyncio==1.5.0",
